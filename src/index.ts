@@ -5,8 +5,8 @@ import axios from 'axios';
 // Configuration
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
-const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || 'df2087f89195afd2f49c5a4e88370de18a46388c04751d2a24a3eae3f2bf2b55';
-const AQI_TOKEN = process.env.AQI_TOKEN || '15a4ab2e24fd2e30c3997345b68dc537f21c9764';
+const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY!; // ✅ Only use .env
+const AQI_TOKEN = process.env.AQI_TOKEN!; // ✅ Only use .env
 
 // Air Quality Index Levels
 const AQI_LEVELS = [
