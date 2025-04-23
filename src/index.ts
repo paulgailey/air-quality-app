@@ -33,91 +33,74 @@ class AirQualityApp extends TpaServer {
   
   private setupRoutes() {
     const expressApp = this.getExpressApp();
-  
-    // Middleware for parsing JSON
-    expressApp.use(express.json());
-  
-    // Root endpoint
-    expressApp.get('/', (req, res) => {
-      res.json({ 
-        status: "running", 
-        app: PACKAGE_NAME,
-        endpoints: ["/health", "/webhook", "/webbook"],
-        note: "Using /webbook temporarily for AugmentOS compatibility"
-      });
+
+    // Enable CORS for Android app
+    expressApp.use((req, res, next) => {
+      res.header("Access-Control-Allow-Origin", "*");
+      res.header("Access-Control-Allow-Headers", "Content-Type, X-AugmentOS-Signature");
+      next();
     });
-    
+
+    expressApp.use(express.json());
+
+    // Unified webhook handler
+    const handleWebhook = (req: express.Request, res: express.Response) => {
+      console.log('Received webhook at:', req.path, 'Body:', req.body);
+      
+      if (!req.body?.type || req.body.type !== 'session_request') {
+        console.warn('Invalid webhook payload:', req.body);
+        return res.status(400).json({ 
+          status: 'error',
+          message: 'Invalid request type',
+          supported_types: ['session_request']
+        });
+      }
+
+      try {
+        this.handleAugmentOSSession(req.body);
+        res.json({ 
+          status: 'success',
+          sessionId: req.body.sessionId,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error('Webhook processing failed:', error);
+        res.status(500).json({
+          status: 'error',
+          message: 'Failed to process session',
+          error: error.message
+        });
+      }
+    };
+
+    // Apply to both endpoints
+    expressApp.post('/webhook', handleWebhook);
+    expressApp.post('/webbook', handleWebhook);
+
     // Health check endpoint
     expressApp.get('/health', (req, res) => {
       res.json({
         status: "healthy",
-        service: "everywoah-air-quality",
+        service: PACKAGE_NAME,
         version: "1.0.0",
-        timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || "development"
+        timestamp: new Date().toISOString()
       });
     });
-  
-    // Unified webhook handler for both endpoints
-    expressApp.post('/webhook', (req, res) => this.handleWebhook(req, res));
-    expressApp.post('/webbook', (req, res) => this.handleWebhook(req, res));
-  }
-  
-  private handleWebhook(req: express.Request, res: express.Response) {
-    console.log('Incoming webhook request:', {
-      path: req.path,
-      headers: req.headers,
-      body: req.body
-    });
 
-    // Validate request format
-    if (!req.body || typeof req.body !== 'object') {
-      console.error('Invalid webhook payload format');
-      return res.status(400).json({
-        status: "error",
-        message: "Invalid request format",
-        required_format: {
-          type: "string",
-          sessionId: "string",
-          userId: "string",
-          timestamp: "ISO8601"
-        }
+    // Root endpoint
+    expressApp.get('/', (req, res) => {
+      res.json({ 
+        status: "running",
+        app: PACKAGE_NAME,
+        endpoints: ["/health", "/webhook", "/webbook"],
+        note: "Dual endpoints for AugmentOS compatibility"
       });
-    }
-
-    // Handle different webhook types
-    switch (req.body.type) {
-      case 'session_request':
-        console.log('Processing session request:', req.body.sessionId);
-        try {
-          this.handleAugmentOSSession(req.body);
-          return res.json({
-            status: "success",
-            sessionId: req.body.sessionId,
-            processedAt: new Date().toISOString()
-          });
-        } catch (error) {
-          console.error('Session processing failed:', error);
-          return res.status(500).json({
-            status: "error",
-            message: "Failed to process session",
-            error: error.message
-          });
-        }
-
-      default:
-        console.warn('Unknown webhook type:', req.body.type);
-        return res.status(400).json({
-          status: "error",
-          message: "Unknown webhook type",
-          supported_types: ["session_request"]
-        });
-    }
+    });
   }
   
   private handleAugmentOSSession(sessionData: any) {
     if (!sessionData.sessionId || !sessionData.userId) {
-      throw new Error("Missing required session data");
+      throw new Error("Missing required session fields");
     }
 
     console.log('Creating session:', {
@@ -129,17 +112,17 @@ class AirQualityApp extends TpaServer {
     const mockSession = {
       layouts: {
         showTextWall: (text: string, options: any) => {
-          console.log(`[DISPLAY]: ${text}`, options);
+          console.log(`[DISPLAY] ${text}`, options);
         }
       },
       onVoiceCommand: (command: string, callback: () => void) => {
-        console.log(`[VOICE COMMAND]: Registered "${command}"`);
+        console.log(`[VOICE] Registered command: "${command}"`);
         callback();
       },
       getUserLocation: async () => {
-        console.log('[LOCATION] Fetching user location');
-        return {
-          latitude: 51.5074,  // Default to London coordinates
+        console.log('[LOCATION] Fetching coordinates');
+        return { 
+          latitude: 51.5074, 
           longitude: -0.1278,
           accuracy: 50,
           timestamp: new Date().toISOString()
@@ -155,7 +138,7 @@ class AirQualityApp extends TpaServer {
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
-    console.log(`\n🌬️ Starting air quality session for ${userId} (${sessionId})\n`);
+    console.log(`\n🌬️ Starting session ${sessionId} for ${userId}\n`);
     
     try {
       this.setupVoiceCommands(session);
@@ -186,7 +169,7 @@ class AirQualityApp extends TpaServer {
         try {
           await this.checkAirQuality(session);
         } catch (error) {
-          console.error('Voice command processing failed:', error);
+          console.error('Command processing failed:', error);
           session.layouts.showTextWall("Sorry, I couldn't check air quality", {
             view: ViewType.MAIN,
             durationMs: 3000
@@ -198,13 +181,11 @@ class AirQualityApp extends TpaServer {
   
   private async checkAirQuality(session: TpaSession) {
     try {
-      // Show loading message
       session.layouts.showTextWall("Checking air quality...", {
         view: ViewType.MAIN,
         durationMs: 2000
       });
 
-      // Get location with timeout
       const location = await Promise.race([
         session.getUserLocation(),
         new Promise((_, reject) => 
@@ -218,17 +199,14 @@ class AirQualityApp extends TpaServer {
 
       console.log('Fetching AQI for:', location.latitude, location.longitude);
       
-      // Fetch AQI data
       const aqiData = await this.fetchAQI(location.latitude, location.longitude);
       const quality = AQI_LEVELS.find(l => aqiData.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
       
-      // Format display message
       const message = `At ${aqiData.city.name}:\n` +
                      `Air Quality: ${quality.label} ${quality.emoji}\n` +
                      `AQI Index: ${aqiData.aqi}\n\n` +
                      `Recommendation: ${quality.advice}`;
       
-      // Display results
       session.layouts.showTextWall(message, {
         view: ViewType.MAIN,
         durationMs: 10000
@@ -237,7 +215,7 @@ class AirQualityApp extends TpaServer {
       console.log(`Displayed AQI ${aqiData.aqi} (${quality.label})`);
     } catch (error) {
       console.error('Air quality check failed:', error);
-      session.layouts.showTextWall("Sorry, couldn't get air quality data", {
+      session.layouts.showTextWall("Air quality data unavailable", {
         view: ViewType.MAIN,
         durationMs: 5000
       });
@@ -279,20 +257,21 @@ class AirQualityApp extends TpaServer {
   }
 }
 
-// Application startup
+// Startup
 const airQualityApp = new AirQualityApp();
 
 airQualityApp.start()
   .then(() => {
     console.log(`
-✅ Air Quality App successfully started
-───────────────────────────────────────
-• Local URL: http://localhost:${PORT}
-• Health Check: http://localhost:${PORT}/health
-• Webhook Endpoint: http://localhost:${PORT}/webhook
-• Typo Endpoint: http://localhost:${PORT}/webbook
-
-Supported Voice Commands:
+✅ Air Quality App Online
+─────────────────────────────
+• Local: http://localhost:${PORT}
+• Health: http://localhost:${PORT}/health
+• Webhooks: 
+  - POST /webhook
+  - POST /webbook (compatibility)
+─────────────────────────────
+Voice commands ready:
 ${[
   "air quality",
   "what's the air like",
@@ -302,21 +281,18 @@ ${[
   "is the air dirty",
   "how clean is the air"
 ].map(cmd => `• "${cmd}"`).join('\n')}
-───────────────────────────────────────
-Note: The /webbook endpoint is temporary
-for AugmentOS compatibility.
 `);
   })
   .catch(error => {
     console.error(`
-🚨 Failed to start Air Quality App
-───────────────────────────────────────
+🚨 Failed to Start Server
+─────────────────────────────
 Error: ${error.message}
 
 Check:
-1. API keys in .env are valid
-2. Port ${PORT} is available
-3. All dependencies are installed
+1. Port ${PORT} is available
+2. .env contains valid API keys
+3. Dependencies are installed
 `);
     process.exit(1);
   });
