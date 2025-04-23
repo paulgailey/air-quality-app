@@ -46,8 +46,16 @@ class AirQualityApp extends TpaServer {
         version: "1.0.0"
       });
     });
+  
+    // ✅ CORRECTLY PLACED ROOT ENDPOINT
+    expressApp.get('/', (req, res) => {
+      res.json({ 
+        status: "running", 
+        app: PACKAGE_NAME,
+        endpoints: ["/health", "/onSession"] 
+      });
+    });
   }
-
   /**
    * Called by TpaServer when a new session is created
    */
