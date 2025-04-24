@@ -78,7 +78,9 @@ class AirQualityApp extends TpaServer {
           phrase,
           description: "Check air quality information"
         })),
-        permissions: ["location", "voice"]
+        permissions: ["location", "voice"],
+        transcriptionLanguages: ["en-US"],  // Add this
+        streamAccess: [StreamType.TRANSCRIPTION]  // Add this 
       });
     });
 
@@ -190,24 +192,16 @@ class AirQualityApp extends TpaServer {
     this.activeSessions.set(sessionId, { userId, started: new Date() });
     
     try {
-      // Explicitly start listening for voice commands
-      if (session.voice && typeof session.voice.listen === 'function') {
-        await session.voice.listen();
-        console.log("🎤 Voice listening activated");
+      // Subscribe to transcriptions
+      const cleanup = session.onTranscriptionForLanguage('en-US', (data) => {
+        const transcript = data.text.toLowerCase();
+        console.log(`🎤 Transcription received: "${transcript}"`);
         
-        // Show listening indicator to user
-        await session.layouts.showTextWall(
-          "Listening for voice commands...\nTry saying \"What's the air like?\"", 
-          { view: ViewType.SUBTLE, durationMs: 3000 }
-        );
-      } else {
-        console.warn("Voice API not available");
-      }
-      
-      // Listen for voice commands
-      session.on('voiceCommand', async (cmd) => {
-        console.log(`🎤 Voice command received: "${cmd}"`);
-        await this.checkAirQuality(session);
+        // Check if the transcript matches any voice command
+        if (this.voiceCommands.some(cmd => transcript.includes(cmd.toLowerCase()))) {
+          console.log(`🎤 Voice command detected: "${transcript}"`);
+          this.checkAirQuality(session);
+        }
       });
       
       // Initial air quality check
@@ -219,41 +213,19 @@ class AirQualityApp extends TpaServer {
           "Say \"What's the air like?\" anytime to check current air quality", 
           { view: ViewType.SUBTLE, durationMs: 5000 }
         );
-      }, 5000);
+      }, 3000);
     } catch (error) {
-      console.error(`Session ${sessionId} failed:`, error instanceof Error ? error.message : error);
+      console.error(`Session ${sessionId} failed:`, error);
       session.layouts.showTextWall("Failed to check air quality", { view: ViewType.MAIN });
     }
   }
   
   private async checkAirQuality(session: TpaSession) {
     try {
-      let location;
-      
-      // Handle location more defensively
-      if (session.permissions && typeof session.permissions.requestLocation === 'function') {
-        try {
-          location = await session.permissions.requestLocation();
-          console.log("Got location permissions:", location);
-        } catch (error) {
-          console.warn("Failed to get location permission:", error);
-        }
-      } else {
-        console.warn("Location permission API not available");
-      }
-      
-      // Use default location if needed
-      if (!location) {
-        console.log("📍 Using default location (London)");
-        await this.checkAirQualityForLocation(session, { latitude: 51.5074, longitude: -0.1278 }, "London (default)");
-        return;
-      }
-      
-      console.log(`📍 Checking air quality for location: ${location.latitude}, ${location.longitude}`);
-      await this.checkAirQualityForLocation(session, location);
-      
+      console.log("📍 Using default location (London)");
+      await this.checkAirQualityForLocation(session, { latitude: 51.5074, longitude: -0.1278 }, "London (default)");
     } catch (error) {
-      console.error('Air quality check failed:', error instanceof Error ? error.message : error);
+      console.error('Air quality check failed:', error);
       await session.layouts.showTextWall("Failed to get air quality data", { 
         view: ViewType.MAIN,
         durationMs: 5000
