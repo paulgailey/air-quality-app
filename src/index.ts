@@ -118,7 +118,7 @@ class AirQualityApp extends TpaServer {
       res.json({
         status: "running",
         app: "Air Quality Service",
-        version: "1.0",
+        version: "1.1", // Updated version
         endpoints: [
           "/health",
           "/webhook",
@@ -156,7 +156,7 @@ class AirQualityApp extends TpaServer {
     };
 
     expressApp.post('/webhook', handleWebhook);
-    expressApp.post('/webbook', handleWebhook); // Typo fix (though you might want to remove this)
+    expressApp.post('/webbook', handleWebhook);
 
     // Health endpoint
     expressApp.get('/health', (req, res) => {
@@ -190,6 +190,20 @@ class AirQualityApp extends TpaServer {
     this.activeSessions.set(sessionId, { userId, started: new Date() });
     
     try {
+      // Explicitly start listening for voice commands
+      if (session.voice && typeof session.voice.listen === 'function') {
+        await session.voice.listen();
+        console.log("🎤 Voice listening activated");
+        
+        // Show listening indicator to user
+        await session.layouts.showTextWall(
+          "Listening for voice commands...\nTry saying \"What's the air like?\"", 
+          { view: ViewType.SUBTLE, durationMs: 3000 }
+        );
+      } else {
+        console.warn("Voice API not available");
+      }
+      
       // Listen for voice commands
       session.on('voiceCommand', async (cmd) => {
         console.log(`🎤 Voice command received: "${cmd}"`);
@@ -215,12 +229,17 @@ class AirQualityApp extends TpaServer {
   private async checkAirQuality(session: TpaSession) {
     try {
       let location;
-      try {
-        // Try to get user location
-        location = await session.permissions.requestLocation();
-        console.log("Got location permissions:", location);
-      } catch (error) {
-        console.warn("Failed to get location permission:", error);
+      
+      // Handle location more defensively
+      if (session.permissions && typeof session.permissions.requestLocation === 'function') {
+        try {
+          location = await session.permissions.requestLocation();
+          console.log("Got location permissions:", location);
+        } catch (error) {
+          console.warn("Failed to get location permission:", error);
+        }
+      } else {
+        console.warn("Location permission API not available");
       }
       
       // Use default location if needed
