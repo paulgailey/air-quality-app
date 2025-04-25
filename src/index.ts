@@ -74,7 +74,6 @@ class AirQualityApp extends TpaServer {
   private setupRoutes() {
     const expressApp = this.getExpressApp();
 
-    // TPA Configuration Endpoint
     expressApp.get('/tpa_config.json', (req, res) => {
       res.json({
         voiceCommands: this.voiceCommands.map(phrase => ({
@@ -87,28 +86,22 @@ class AirQualityApp extends TpaServer {
       });
     });
 
-    // Enhanced request logging
     expressApp.use((req, res, next) => {
       const requestId = crypto.randomUUID();
       this.requestCount++;
       const startTime = Date.now();
-      
       (req as any).id = requestId;
       res.set('X-Request-ID', requestId);
-      
       if (NGROK_DEBUG) {
         console.log(`[${new Date().toISOString()}] REQ#${this.requestCount} ${req.method} ${req.path}`);
       }
-
       res.on('finish', () => {
         const duration = Date.now() - startTime;
         console.log(`[${new Date().toISOString()}] RES#${this.requestCount} ${req.method} ${req.path} → ${res.statusCode} (${duration}ms)`);
       });
-
       next();
     });
 
-    // CORS configuration
     expressApp.use((req, res, next) => {
       res.header("Access-Control-Allow-Origin", "*");
       res.header("Access-Control-Allow-Headers", "Content-Type, X-AugmentOS-Signature");
@@ -117,13 +110,12 @@ class AirQualityApp extends TpaServer {
     });
 
     expressApp.use(express.json({ limit: '10kb' }));
-    
-    // Serve basic info at root
+
     expressApp.get('/', (req, res) => {
       res.json({
         status: "running",
         app: "Air Quality Service",
-        version: "1.1",
+        version: APP_VERSION,
         endpoints: [
           "/health",
           "/webhook",
@@ -131,8 +123,7 @@ class AirQualityApp extends TpaServer {
         ]
       });
     });
-    
-    // Webhook handler
+
     const handleWebhook = async (req: express.Request, res: express.Response) => {
       if (!req.body?.type) {
         return res.status(400).json({ 
@@ -163,7 +154,6 @@ class AirQualityApp extends TpaServer {
     expressApp.post('/webhook', handleWebhook);
     expressApp.post('/webbook', handleWebhook);
 
-    // Health endpoint
     expressApp.get('/health', (req, res) => {
       res.json({ 
         status: "healthy",
@@ -172,7 +162,7 @@ class AirQualityApp extends TpaServer {
       });
     });
   }
-  
+
   private async handleAugmentOSSession(sessionData: SessionData) {
     console.log(`🗣️ Received session request for user ${sessionData.userId}, session ${sessionData.sessionId}`);
     try {
@@ -181,7 +171,6 @@ class AirQualityApp extends TpaServer {
         userId: sessionData.userId,
         packageName: PACKAGE_NAME
       });
-
       console.log(`🚀 [${sessionData.sessionId}] TPA Session initialized`);
       console.log(`🚀 [${sessionData.sessionId}] WebSocket URL: ${tpaSession.wsUrl}`);
     } catch (error) {
@@ -193,23 +182,19 @@ class AirQualityApp extends TpaServer {
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`🌬️ Starting air quality session ${sessionId} for user ${userId}`);
     this.activeSessions.set(sessionId, { userId, started: new Date() });
-    
+
     try {
-      // Subscribe to transcriptions
       const cleanup = session.onTranscriptionForLanguage('en-US', (data) => {
         const transcript = data.text.toLowerCase();
         console.log(`🎤 Transcription received: "${transcript}"`);
-        
         if (this.voiceCommands.some(cmd => transcript.includes(cmd.toLowerCase()))) {
           console.log(`🎤 Voice command detected: "${transcript}"`);
           this.checkAirQuality(session);
         }
       });
-      
-      // Initial air quality check with real user location
+
       await this.checkAirQuality(session);
-      
-      // Display hint about voice commands
+
       setTimeout(() => {
         session.layouts.showTextWall(
           "Say \"What's the air like?\" anytime to check current air quality", 
@@ -221,21 +206,18 @@ class AirQualityApp extends TpaServer {
       session.layouts.showTextWall("Failed to check air quality", { view: ViewType.MAIN });
     }
   }
-  
+
   private async checkAirQuality(session: TpaSession) {
     try {
-      // Get user's actual location with timeout fallback
       const location = await Promise.race([
         session.getUserLocation(),
         new Promise((_, reject) => 
           setTimeout(() => reject(new Error("Location timeout")), 5000)
         )
       ]);
-
       if (!location?.latitude || !location?.longitude) {
         throw new Error("Invalid location data");
       }
-
       console.log(`📍 Using user location: ${location.latitude}, ${location.longitude}`);
       await this.checkAirQualityForLocation(session, location);
     } catch (error) {
@@ -247,14 +229,13 @@ class AirQualityApp extends TpaServer {
       );
     }
   }
-  
+
   private async checkAirQualityForLocation(
     session: TpaSession, 
     location: { latitude: number, longitude: number }, 
     locationName?: string
   ) {
     try {
-      // Show loading message
       await session.layouts.showTextWall("Checking air quality...", {
         view: ViewType.MAIN,
         durationMs: 2000
@@ -262,13 +243,12 @@ class AirQualityApp extends TpaServer {
 
       const aqiData = await this.fetchAQI(location.latitude, location.longitude);
       const quality = AQI_LEVELS.find(l => aqiData.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
-      
       const cityName = locationName || aqiData.city.name;
       const message = `📍 ${cityName}\n\n` +
-                     `Air Quality: ${quality.label} ${quality.emoji}\n` +
-                     `AQI Index: ${aqiData.aqi}\n\n` +
-                     `Recommendation: ${quality.advice}`;
-      
+                      `Air Quality: ${quality.label} ${quality.emoji}\n` +
+                      `AQI Index: ${aqiData.aqi}\n\n` +
+                      `Recommendation: ${quality.advice}`;
+
       await session.layouts.showTextWall(message, { 
         view: ViewType.MAIN, 
         durationMs: 15000 
@@ -282,46 +262,17 @@ class AirQualityApp extends TpaServer {
     }
   }
 
-  private async fetchAQI(lat: number, lng: number): Promise<AQIData> {
-    try {
-      console.log(`🌐 Fetching AQI for ${lat},${lng}`);
-      const { data } = await axios.get(
-        `https://api.waqi.info/feed/geo:${lat};${lng}/?token=${AQI_TOKEN}`,
-        { 
-          timeout: 8000,
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'AugmentOS-AirQuality/1.1'
-          }
-        }
-      );
-      
-      if (data.status !== 'ok' || !data.data) {
-        throw new Error(`API error: ${data.status || 'No data'}`);
-      }
-      
-      return {
-        aqi: data.data.aqi,
-        city: data.data.city
-      };
-    } catch (error) {
-      console.error('WAQI API call failed:', error instanceof Error ? error.message : error);
-      throw new Error(`Air quality service unavailable: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  private async fetchAQI(lat: number, lon: number): Promise<AQIData> {
+    const url = `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`;
+    const response = await axios.get(url);
+    if (response.data.status !== 'ok') {
+      throw new Error(`AQI API error: ${response.data.data}`);
     }
-  }
-
-  protected async onStop(sessionId: string, userId: string, reason: string): Promise<void> {
-    console.log(`Session ${sessionId} ended (Reason: ${reason})`);
-    this.activeSessions.delete(sessionId);
+    return {
+      aqi: response.data.data.aqi,
+      city: response.data.data.city
+    };
   }
 }
 
-// Startup
-console.log('🚀 Starting Air Quality App...');
-const airQualityApp = new AirQualityApp();
-airQualityApp.start().then(() => {
-  console.log(`✅ Server running on port ${PORT}`);
-}).catch((error) => {
-  console.error('❌ Failed to start server:', error);
-  process.exit(1);
-});
+new AirQualityApp();
