@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'path';
-import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
+import { TpaServer, TpaSession, ViewType, StreamType } from '@augmentos/sdk';
 import axios from 'axios';
 import crypto from 'crypto';
 
