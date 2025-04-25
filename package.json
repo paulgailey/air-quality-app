@@ -1,6 +1,14 @@
 {
   "name": "@everywoah/air-quality",
-  "version": "1.0.0",
+  "version": "1.2.0",
+  "type": "module",
+  "augmentos": {
+    "versionDisplay": "Air Quality v1.2"
+  },
+  "repository": {
+  "type": "git",
+  "url": "https://github.com/paulgailey/air-quality-app"
+},
   "main": "dist/index.js",
   "scripts": {
     "dev": "bun --hot src/index.ts",

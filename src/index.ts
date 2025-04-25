@@ -3,8 +3,11 @@ import path from 'path';
 import { TpaServer, TpaSession, ViewType, StreamType } from '@augmentos/sdk';
 import axios from 'axios';
 import crypto from 'crypto';
+import { readFileSync } from 'fs';
 
 // Configuration
+const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'));
+const APP_VERSION = packageJson.version;
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY!;
@@ -79,8 +82,8 @@ class AirQualityApp extends TpaServer {
           description: "Check air quality information"
         })),
         permissions: ["location", "voice"],
-        transcriptionLanguages: ["en-US"],  // Add this
-        streamAccess: [StreamType.TRANSCRIPTION]  // Add this 
+        transcriptionLanguages: ["en-US"],
+        streamAccess: [StreamType.TRANSCRIPTION]
       });
     });
 
@@ -120,7 +123,7 @@ class AirQualityApp extends TpaServer {
       res.json({
         status: "running",
         app: "Air Quality Service",
-        version: "1.1", // Updated version
+        version: "1.1",
         endpoints: [
           "/health",
           "/webhook",
@@ -197,14 +200,13 @@ class AirQualityApp extends TpaServer {
         const transcript = data.text.toLowerCase();
         console.log(`🎤 Transcription received: "${transcript}"`);
         
-        // Check if the transcript matches any voice command
         if (this.voiceCommands.some(cmd => transcript.includes(cmd.toLowerCase()))) {
           console.log(`🎤 Voice command detected: "${transcript}"`);
           this.checkAirQuality(session);
         }
       });
       
-      // Initial air quality check
+      // Initial air quality check with real user location
       await this.checkAirQuality(session);
       
       // Display hint about voice commands
@@ -222,14 +224,27 @@ class AirQualityApp extends TpaServer {
   
   private async checkAirQuality(session: TpaSession) {
     try {
-      console.log("📍 Using default location (London)");
-      await this.checkAirQualityForLocation(session, { latitude: 51.5074, longitude: -0.1278 }, "London (default)");
+      // Get user's actual location with timeout fallback
+      const location = await Promise.race([
+        session.getUserLocation(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Location timeout")), 5000)
+        )
+      ]);
+
+      if (!location?.latitude || !location?.longitude) {
+        throw new Error("Invalid location data");
+      }
+
+      console.log(`📍 Using user location: ${location.latitude}, ${location.longitude}`);
+      await this.checkAirQualityForLocation(session, location);
     } catch (error) {
-      console.error('Air quality check failed:', error);
-      await session.layouts.showTextWall("Failed to get air quality data", { 
-        view: ViewType.MAIN,
-        durationMs: 5000
-      });
+      console.warn('Falling back to default location:', error instanceof Error ? error.message : error);
+      await this.checkAirQualityForLocation(
+        session, 
+        { latitude: 51.5074, longitude: -0.1278 },
+        "London (default)"
+      );
     }
   }
   
@@ -239,11 +254,20 @@ class AirQualityApp extends TpaServer {
     locationName?: string
   ) {
     try {
+      // Show loading message
+      await session.layouts.showTextWall("Checking air quality...", {
+        view: ViewType.MAIN,
+        durationMs: 2000
+      });
+
       const aqiData = await this.fetchAQI(location.latitude, location.longitude);
       const quality = AQI_LEVELS.find(l => aqiData.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
       
-      const cityName = locationName || aqiData.city;
-      const message = `📍 ${cityName}\n\nAir Quality: ${quality.label} ${quality.emoji}\nAQI: ${aqiData.aqi}\n\n${quality.advice}`;
+      const cityName = locationName || aqiData.city.name;
+      const message = `📍 ${cityName}\n\n` +
+                     `Air Quality: ${quality.label} ${quality.emoji}\n` +
+                     `AQI Index: ${aqiData.aqi}\n\n` +
+                     `Recommendation: ${quality.advice}`;
       
       await session.layouts.showTextWall(message, { 
         view: ViewType.MAIN, 
@@ -258,25 +282,37 @@ class AirQualityApp extends TpaServer {
     }
   }
 
-  private async fetchAQI(lat: number, lng: number): Promise<{ aqi: number; city: string }> {
+  private async fetchAQI(lat: number, lng: number): Promise<AQIData> {
     try {
-      const { data } = await axios.get<{ data: AQIData }>(
+      console.log(`🌐 Fetching AQI for ${lat},${lng}`);
+      const { data } = await axios.get(
         `https://api.waqi.info/feed/geo:${lat};${lng}/?token=${AQI_TOKEN}`,
-        { timeout: 5000 }
+        { 
+          timeout: 8000,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'AugmentOS-AirQuality/1.1'
+          }
+        }
       );
       
-      if (!data.data || typeof data.data.aqi !== 'number') {
-        throw new Error('Invalid AQI data received');
+      if (data.status !== 'ok' || !data.data) {
+        throw new Error(`API error: ${data.status || 'No data'}`);
       }
       
       return {
         aqi: data.data.aqi,
-        city: data.data.city?.name || 'Unknown location'
+        city: data.data.city
       };
     } catch (error) {
-      console.error('AQI API error:', error instanceof Error ? error.message : error);
-      throw new Error('Failed to fetch AQI data');
+      console.error('WAQI API call failed:', error instanceof Error ? error.message : error);
+      throw new Error(`Air quality service unavailable: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  protected async onStop(sessionId: string, userId: string, reason: string): Promise<void> {
+    console.log(`Session ${sessionId} ended (Reason: ${reason})`);
+    this.activeSessions.delete(sessionId);
   }
 }
 
