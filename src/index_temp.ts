@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { TpaServer, TpaSession, ViewType, StreamType } from '@augmentos/sdk';
@@ -7,15 +6,12 @@ import crypto from 'crypto';
 import { readFileSync } from 'fs';
 
 // Configuration
-const packageJson = JSON.parse(
-  readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
-);
-
+const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'));
 const APP_VERSION = packageJson.version;
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
-const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
-const AQI_TOKEN = process.env.AQI_TOKEN;
+const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY!;
+const AQI_TOKEN = process.env.AQI_TOKEN!;
 const NGROK_DEBUG = process.env.NGROK_DEBUG === 'true';
 
 // Validate critical environment variables
@@ -75,11 +71,8 @@ class AirQualityApp extends TpaServer {
     this.setupRoutes();
   }
 
-  private setupRoutes(): void {
+  private setupRoutes() {
     const expressApp = this.getExpressApp();
-
-    // Health check endpoint
-    expressApp.get('/health', (req, res) => res.send('OK'));
 
     expressApp.get('/tpa_config.json', (req, res) => {
       res.json({
@@ -170,7 +163,7 @@ class AirQualityApp extends TpaServer {
     });
   }
 
-  private async handleAugmentOSSession(sessionData: SessionData): Promise<void> {
+  private async handleAugmentOSSession(sessionData: SessionData) {
     console.log(`🗣️ Received session request for user ${sessionData.userId}, session ${sessionData.sessionId}`);
     try {
       const tpaSession = await this.initTpaSession({
@@ -214,7 +207,7 @@ class AirQualityApp extends TpaServer {
     }
   }
 
-  private async checkAirQuality(session: TpaSession): Promise<void> {
+  private async checkAirQuality(session: TpaSession) {
     try {
       const location = await Promise.race([
         session.getUserLocation(),
@@ -222,11 +215,9 @@ class AirQualityApp extends TpaServer {
           setTimeout(() => reject(new Error("Location timeout")), 5000)
         )
       ]);
-      
       if (!location?.latitude || !location?.longitude) {
         throw new Error("Invalid location data");
       }
-      
       console.log(`📍 Using user location: ${location.latitude}, ${location.longitude}`);
       await this.checkAirQualityForLocation(session, location);
     } catch (error) {
@@ -240,10 +231,10 @@ class AirQualityApp extends TpaServer {
   }
 
   private async checkAirQualityForLocation(
-    session: TpaSession,
-    location: { latitude: number; longitude: number },
+    session: TpaSession, 
+    location: { latitude: number, longitude: number }, 
     locationName?: string
-  ): Promise<void> {
+  ) {
     try {
       await session.layouts.showTextWall("Checking air quality...", {
         view: ViewType.MAIN,
@@ -254,9 +245,9 @@ class AirQualityApp extends TpaServer {
       const quality = AQI_LEVELS.find(l => aqiData.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
       const cityName = locationName || aqiData.city.name;
       const message = `📍 ${cityName}\n\n` +
-                     `Air Quality: ${quality.label} ${quality.emoji}\n` +
-                     `AQI Index: ${aqiData.aqi}\n\n` +
-                     `Recommendation: ${quality.advice}`;
+                      `Air Quality: ${quality.label} ${quality.emoji}\n` +
+                      `AQI Index: ${aqiData.aqi}\n\n` +
+                      `Recommendation: ${quality.advice}`;
 
       await session.layouts.showTextWall(message, { 
         view: ViewType.MAIN, 
@@ -284,13 +275,4 @@ class AirQualityApp extends TpaServer {
   }
 }
 
-// Initialize and run server
-const server = new AirQualityApp();
-
-process.on('unhandledRejection', (err) => {
-  console.error('Unhandled rejection:', err);
-  process.exit(1);
-});
-
-console.log(`Server started on port ${PORT}`);
-console.log(`Health check available at http://localhost:${PORT}/health`);
+new AirQualityApp();
