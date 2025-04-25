@@ -6,24 +6,21 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
 
-// Configuration
 const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.3';
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const AQI_TOKEN = process.env.AQI_TOKEN;
 
-// Validate environment
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   console.error('❌ Missing required environment variables');
   process.exit(1);
 }
 
-// AQI Classification
 const AQI_LEVELS = [
   { max: 50, label: "Good", emoji: "😊", advice: "Perfect for outdoor activities!" },
   { max: 100, label: "Moderate", emoji: "😐", advice: "Acceptable air quality" },
@@ -56,28 +53,35 @@ class AirQualityApp extends TpaServer {
   private setupRoutes(): void {
     const app = this.getExpressApp();
 
-    // Health endpoint
-    app.get('/health', (req, res) => {
-      res.json({ 
-        status: "healthy",
-        version: APP_VERSION,
-        sessions: this.activeSessions.size 
-      });
+    app.get('/', (req, res) => {
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Air Quality Service v${APP_VERSION}</title>
+        </head>
+        <body>
+          <h1>🌬️ Air Quality Service v${APP_VERSION}</h1>
+          <p>Active sessions: ${this.activeSessions.size}</p>
+        </body>
+        </html>
+      `);
     });
 
-    // AugmentOS config
+    app.get('/health', (req, res) => {
+      res.json({ status: "healthy", version: APP_VERSION });
+    });
+
     app.get('/tpa_config.json', (req, res) => {
       res.json({
         voiceCommands: [
-          "air quality", "what's the air like", "pollution",
-          "air pollution", "is the air clean", "how clean is the air"
+          "air quality", "what's the air like", "pollution"
         ].map(phrase => ({ phrase, description: "Check air quality" })),
-        permissions: ["location", "voice"],
+        permissions: ["location"],
         transcriptionLanguages: ["en-US"]
       });
     });
 
-    // Webhook handler
     app.post('/webhook', express.json(), async (req, res) => {
       if (req.body?.type === 'session_request') {
         try {
@@ -110,18 +114,23 @@ class AirQualityApp extends TpaServer {
   }
 
   private async resolveUserLocation(session: TpaSession): Promise<ResolvedLocation> {
-    // 1. Primary: AugmentOS GPS
+    // 1. Try AugmentOS SDK location (CORRECT METHOD)
     try {
-      const gps = await session.getUserLocation();
-      if (gps?.latitude && gps?.longitude) {
-        const city = await this.reverseGeocode(gps.latitude, gps.longitude);
-        return { ...gps, city, source: "gps" };
+      const location = await session.getLocation();
+      if (location?.latitude && location?.longitude) {
+        const city = await this.reverseGeocode(location.latitude, location.longitude);
+        return { 
+          latitude: location.latitude, 
+          longitude: location.longitude, 
+          city, 
+          source: "augmentos" 
+        };
       }
     } catch (error) {
-      console.warn("GPS unavailable:", error instanceof Error ? error.message : error);
+      console.warn("AugmentOS location failed:", error instanceof Error ? error.message : error);
     }
 
-    // 2. Secondary: IP Geolocation
+    // 2. Fallback to IP geolocation
     try {
       const ip = await axios.get('https://ipapi.co/json/', { timeout: 2000 });
       if (ip.data.latitude && ip.data.longitude) {
@@ -136,7 +145,7 @@ class AirQualityApp extends TpaServer {
       console.warn("IP geolocation failed");
     }
 
-    // 3. Fallback: London
+    // 3. Final fallback
     return {
       latitude: 51.5074,
       longitude: -0.1278,
@@ -163,19 +172,16 @@ class AirQualityApp extends TpaServer {
       const aqiData = await this.fetchAQI(location.latitude, location.longitude);
       const quality = AQI_LEVELS.find(l => aqiData.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
       
-      const accuracyNote = location.source !== "gps" ? `\n(Location: ${location.source})` : "";
-      const message = `📍 ${location.city}\n\n` +
-                     `Air Quality: ${quality.label} ${quality.emoji}\n` +
-                     `AQI: ${aqiData.aqi}${accuracyNote}\n\n` +
-                     `${quality.advice}`;
-
-      await session.layouts.showTextWall(message, { 
-        view: ViewType.MAIN,
-        durationMs: 10000 
-      });
+      await session.layouts.showTextWall(
+        `📍 ${location.city}\n\n` +
+        `Air Quality: ${quality.label} ${quality.emoji}\n` +
+        `AQI: ${aqiData.aqi}\n\n` +
+        `${quality.advice}`,
+        { view: ViewType.MAIN, durationMs: 10000 }
+      );
     } catch (error) {
       console.error("AQI check failed:", error instanceof Error ? error.message : error);
-      await session.layouts.showTextWall("Air quality data unavailable", { 
+      await session.layouts.showTextWall("Could not fetch air quality data", { 
         view: ViewType.MAIN,
         durationMs: 3000 
       });
@@ -201,7 +207,6 @@ class AirQualityApp extends TpaServer {
   }
 }
 
-// Start server
 new AirQualityApp().getExpressApp().listen(PORT, () => {
   console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
 });
