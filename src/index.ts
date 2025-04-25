@@ -212,30 +212,75 @@ class AirQualityApp extends TpaServer {
     }
   }
 
-  private async checkAirQuality(session: TpaSession): Promise<void> {
+  private async reverseGeocode(lat: number, lon: number): Promise<string> {
     try {
-      const location = await Promise.race([
-        session.getUserLocation(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Location timeout")), 5000)
-        )
-      ]);
-      
-      if (!location?.latitude || !location?.longitude) {
-        throw new Error("Invalid location data");
-      }
-      
-      console.log(`📍 Using user location: ${location.latitude}, ${location.longitude}`);
-      await this.checkAirQualityForLocation(session, location);
-    } catch (error) {
-      console.warn('Falling back to default location:', error instanceof Error ? error.message : error);
-      await this.checkAirQualityForLocation(
-        session, 
-        { latitude: 51.5074, longitude: -0.1278 },
-        "London (default)"
+      const response = await axios.get(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,
+        { timeout: 3000 }
       );
+      return response.data.address?.city || 
+             response.data.address?.town || 
+             response.data.address?.county || 
+             'Your location';
+    } catch (error) {
+      console.warn('Geocoding failed:', error instanceof Error ? error.message : error);
+      return 'Your area';
     }
   }
+
+  private async getApproximateLocation(): Promise<{latitude: number, longitude: number}> {
+    try {
+      const response = await axios.get('https://ipapi.co/json/', { timeout: 3000 });
+      if (response.data.latitude && response.data.longitude) {
+        console.log(`🌍 Using approximate IP-based location: ${response.data.latitude}, ${response.data.longitude}`);
+        return {
+          latitude: response.data.latitude,
+          longitude: response.data.longitude
+        };
+      }
+    } catch (error) {
+      console.warn('IP geolocation failed:', error instanceof Error ? error.message : error);
+    }
+    
+    console.warn('⚠️ Using ultimate fallback to London');
+    return { latitude: 51.5074, longitude: -0.1278 };
+  }
+
+  private async checkAirQuality(session: TpaSession): Promise<void> {
+    let location: { latitude: number; longitude: number };
+    let locationSource = "Unknown";
+
+    try {
+        // 1. Try precise location first
+        location = await session.getUserLocation();
+        locationSource = "Precise (device GPS)";
+    } catch (error) {
+        console.warn('⚠️ Precise location failed, falling back to IP geolocation:', error instanceof Error ? error.message : error);
+        
+        // 2. Fallback to IP-based location
+        try {
+            location = await this.getApproximateLocation();
+            locationSource = "Approximate (IP-based)";
+        } catch (ipError) {
+            console.error('⚠️ IP geolocation failed, using London fallback:', ipError instanceof Error ? ipError.message : ipError);
+            location = { latitude: 51.5074, longitude: -0.1278 }; // London
+            locationSource = "Fallback (London)";
+        }
+    }
+
+    console.log(`📍 Using ${locationSource} location: ${location.latitude}, ${location.longitude}`);
+
+    try {
+        const cityName = await this.reverseGeocode(location.latitude, location.longitude);
+        await this.checkAirQualityForLocation(session, location, cityName);
+    } catch (error) {
+        console.error('💥 Failed to fetch AQI:', error instanceof Error ? error.message : error);
+        await session.layouts.showTextWall("Could not fetch air quality data", { 
+            view: ViewType.MAIN,
+            durationMs: 5000
+        });
+    }
+}
 
   private async checkAirQualityForLocation(
     session: TpaSession,
@@ -261,8 +306,8 @@ class AirQualityApp extends TpaServer {
         durationMs: 15000 
       });
     } catch (error) {
-      console.error('AQI data retrieval failed:', error instanceof Error ? error.message : error);
-      await session.layouts.showTextWall("Failed to get air quality data for your location", { 
+      console.error('AQI retrieval failed:', error instanceof Error ? error.message : error);
+      await session.layouts.showTextWall("Failed to get air quality data", { 
         view: ViewType.MAIN,
         durationMs: 5000
       });
@@ -271,15 +316,34 @@ class AirQualityApp extends TpaServer {
 
   private async fetchAQI(lat: number, lon: number): Promise<AQIData> {
     const url = `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`;
-    const response = await axios.get(url);
-    if (response.data.status !== 'ok') {
-      throw new Error(`AQI API error: ${response.data.data}`);
+    
+    try {
+        const response = await axios.get(url, { timeout: 5000 });
+        
+        if (response.data.status !== 'ok') {
+            // Handle API errors (e.g., no station nearby)
+            throw new Error(response.data.data || 'No AQI data available for this location');
+        }
+
+        if (typeof response.data.data?.aqi !== 'number') {
+            throw new Error('Invalid AQI data format');
+        }
+
+        // Extract the nearest station's data
+        const stationData = response.data.data;
+        return {
+            aqi: stationData.aqi,
+            city: {
+                name: stationData.city?.name || 'Your location',
+                geo: [lat, lon],
+                url: `https://waqi.info/#/c/${lat}/${lon}/10z`
+            }
+        };
+    } catch (error) {
+        console.error('AQI API failed:', error instanceof Error ? error.message : error);
+        throw new Error('Could not retrieve air quality data');
     }
-    return {
-      aqi: response.data.data.aqi,
-      city: response.data.data.city
-    };
-  }
+}
 }
 
 // Server initialization
