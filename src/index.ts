@@ -6,7 +6,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
 
-// Configuration (15 lines)
+// Configuration
 const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
@@ -16,13 +16,13 @@ const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const AQI_TOKEN = process.env.AQI_TOKEN;
 
-// Validate environment (8 lines)
+// Validate environment
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   console.error('❌ Missing required environment variables');
   process.exit(1);
 }
 
-// AQI Levels (15 lines)
+// AQI Levels
 const AQI_LEVELS = [
   { max: 50, label: "Good", emoji: "😊", advice: "Perfect for outdoor activities!" },
   { max: 100, label: "Moderate", emoji: "😐", advice: "Acceptable air quality" },
@@ -32,7 +32,7 @@ const AQI_LEVELS = [
   { max: Infinity, label: "Hazardous", emoji: "☢️", advice: "Stay indoors with windows closed" }
 ];
 
-interface AQIStationData {  // (7 lines)
+interface AQIStationData {
   aqi: number;
   station: {
     name: string;
@@ -40,10 +40,17 @@ interface AQIStationData {  // (7 lines)
   };
 }
 
-class AirQualityApp extends TpaServer {  // (220 lines total)
+interface LocationQueryResult {
+  cityName: string;
+  coordinates: { lat: number, lon: number };
+  success: boolean;
+  message?: string;
+}
+
+class AirQualityApp extends TpaServer {
   private activeSessions = new Map<string, { userId: string; started: Date }>();
   private requestCount = 0;
-  private readonly VOICE_COMMANDS = [  // (8 lines)
+  private readonly VOICE_COMMANDS = [
     "air quality",
     "what's the air like",
     "pollution",
@@ -52,7 +59,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     "nearest air quality station"
   ];
 
-  constructor() {  // (7 lines)
+  constructor() {
     super({
       packageName: PACKAGE_NAME,
       apiKey: AUGMENTOS_API_KEY,
@@ -62,10 +69,10 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     this.setupRoutes();
   }
 
-  private setupRoutes(): void {  // (60 lines)
+  private setupRoutes(): void {
     const app = this.getExpressApp();
 
-    // Middleware (15 lines)
+    // Middleware
     app.use((req, res, next) => {
       this.requestCount++;
       const requestId = crypto.randomUUID();
@@ -75,7 +82,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     });
     app.use(express.json());
 
-    // Routes (45 lines)
+    // Routes
     app.get('/', (req, res) => {
       res.json({
         status: "running",
@@ -121,21 +128,122 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     });
   }
 
-  protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {  // (30 lines)
+  protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     this.activeSessions.set(sessionId, { userId, started: new Date() });
 
     session.onTranscriptionForLanguage('en-US', (transcript) => {
       const text = transcript.text.toLowerCase();
       console.log(`🎤 Heard: "${text}"`);
-      if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
+      
+      // Check if user is asking about a specific location
+      const locationQuery = this.extractLocationQuery(text);
+      
+      if (locationQuery) {
+        console.log(`📍 Location query detected: "${locationQuery}"`);
+        this.checkAirQualityForLocation(session, locationQuery).catch(console.error);
+      } else if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
+        // If no specific location is mentioned, use current location
         this.checkAirQuality(session).catch(console.error);
       }
     });
 
+    // Initial greeting
     await this.checkAirQuality(session);
   }
 
-  private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {  // (20 lines)
+  private extractLocationQuery(text: string): string | null {
+    // Match patterns like "in [location]", "at [location]", "for [location]"
+    const locationPatterns = [
+      /(?:what's|what is|how's|how is)(?:.*)(?:air|pollution|quality)(?:.*)(?:in|at|for) ([\w\s]+)(?:\?|$)/i,
+      /(?:air|pollution|quality)(?:.*)(?:in|at|for) ([\w\s]+)(?:\?|$)/i
+    ];
+
+    for (const pattern of locationPatterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+    
+    return null;
+  }
+
+  private async geocodeLocation(locationName: string): Promise<LocationQueryResult> {
+    try {
+      // Use a geocoding API to convert location name to coordinates
+      const response = await axios.get(
+        `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(locationName)}&key=${process.env.GEOCODING_API_KEY || 'd4b514a833144f3dbd9e5c0515fd92cf'}`,
+        { timeout: 3000 }
+      );
+      
+      if (response.data.results && response.data.results.length > 0) {
+        const result = response.data.results[0];
+        return {
+          cityName: result.formatted,
+          coordinates: { 
+            lat: result.geometry.lat, 
+            lon: result.geometry.lng 
+          },
+          success: true
+        };
+      } else {
+        return {
+          cityName: locationName,
+          coordinates: { lat: 0, lon: 0 },
+          success: false,
+          message: "Location not found"
+        };
+      }
+    } catch (error) {
+      console.error('Geocoding failed:', error);
+      return {
+        cityName: locationName,
+        coordinates: { lat: 0, lon: 0 },
+        success: false,
+        message: "Geocoding service error"
+      };
+    }
+  }
+
+  private async checkAirQualityForLocation(session: TpaSession, locationQuery: string): Promise<void> {
+    try {
+      // Get coordinates for the queried location
+      const locationResult = await this.geocodeLocation(locationQuery);
+      
+      if (!locationResult.success) {
+        await session.layouts.showTextWall(
+          `Sorry, I couldn't find air quality data for "${locationQuery}"\n\n${locationResult.message || "Location not recognized"}`,
+          { view: ViewType.MAIN, durationMs: 5000 }
+        );
+        return;
+      }
+      
+      // Get AQI data for the location
+      const station = await this.getNearestAQIStation(
+        locationResult.coordinates.lat, 
+        locationResult.coordinates.lon
+      );
+      
+      const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
+      
+      await session.layouts.showTextWall(
+        `📍 ${locationResult.cityName}\n` +
+        `Station: ${station.station.name}\n\n` +
+        `Air Quality: ${quality.label} ${quality.emoji}\n` +
+        `AQI: ${station.aqi}\n\n` +
+        `${quality.advice}`,
+        { view: ViewType.MAIN, durationMs: 10000 }
+      );
+    } catch (error) {
+      console.error("Location check failed:", error);
+      await session.layouts.showTextWall(
+        `Air quality data for "${locationQuery}" is unavailable.\nPlease try another location.`, 
+        { view: ViewType.MAIN, durationMs: 5000 }
+      );
+    }
+  }
+
+  private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
     try {
       const response = await axios.get(
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
@@ -157,7 +265,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     }
   }
 
-  private async checkAirQuality(session: TpaSession): Promise<void> {  // (25 lines)
+  private async checkAirQuality(session: TpaSession): Promise<void> {
     try {
       const coords = session.location?.latitude 
         ? { lat: session.location.latitude, lon: session.location.longitude }
@@ -182,7 +290,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     }
   }
 
-  private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {  // (15 lines)
+  private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
     try {
       const ip = await axios.get('https://ipapi.co/json/', { timeout: 2000 });
       if (ip.data.latitude && ip.data.longitude) {
@@ -195,7 +303,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
   }
 }
 
-// Server Startup (10 lines)
+// Server Startup
 new AirQualityApp().getExpressApp().listen(PORT, () => {
   console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
 });
