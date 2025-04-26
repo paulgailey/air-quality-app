@@ -9,6 +9,21 @@ import { readFileSync } from 'fs';
 // Vercel-compatible __dirname replacement
 const __dirname = new URL('.', import.meta.url).pathname;
 
+// Type augmentation for Augmentos SDK
+declare module '@augmentos/sdk' {
+  interface TpaSession {
+    location?: {
+      latitude: number;
+      longitude: number;
+    };
+    initTpaSession?(options: {
+      sessionId: string;
+      userId: string;
+      packageName: string;
+    }): Promise<void>;
+  }
+}
+
 // Configuration
 const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
@@ -44,7 +59,6 @@ interface AQIStationData {
 }
 
 class AirQualityApp extends TpaServer {
-  private activeSessions = new Map<string, { userId: string; started: Date }>();
   private requestCount = 0;
   private readonly VOICE_COMMANDS = [
     "air quality",
@@ -90,7 +104,7 @@ class AirQualityApp extends TpaServer {
     app.get('/health', (req, res) => {
       res.json({
         status: "healthy",
-        sessions: this.activeSessions.size
+        sessions: this.getActiveSessionsCount()
       });
     });
 
@@ -108,11 +122,7 @@ class AirQualityApp extends TpaServer {
     app.post('/webhook', async (req, res) => {
       if (req.body?.type === 'session_request') {
         try {
-          await this.initTpaSession({
-            sessionId: req.body.sessionId,
-            userId: req.body.userId,
-            packageName: PACKAGE_NAME
-          });
+          await this.handleSessionRequest(req.body);
           res.json({ status: 'success' });
         } catch (error) {
           console.error('Session init failed:', error);
@@ -124,9 +134,18 @@ class AirQualityApp extends TpaServer {
     });
   }
 
-  protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
-    this.activeSessions.set(sessionId, { userId, started: new Date() });
+  private async handleSessionRequest(body: any): Promise<void> {
+    if (!this.initTpaSession) {
+      throw new Error('Session initialization not available');
+    }
+    await this.initTpaSession({
+      sessionId: body.sessionId,
+      userId: body.userId,
+      packageName: PACKAGE_NAME
+    });
+  }
 
+  protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     session.onTranscriptionForLanguage('en-US', (transcript) => {
       const text = transcript.text.toLowerCase();
       console.log(`🎤 Heard: "${text}"`);
@@ -162,7 +181,7 @@ class AirQualityApp extends TpaServer {
 
   private async checkAirQuality(session: TpaSession): Promise<void> {
     try {
-      const coords = session.location?.latitude 
+      const coords = session.location 
         ? { lat: session.location.latitude, lon: session.location.longitude }
         : await this.getApproximateCoords();
       
@@ -198,6 +217,6 @@ class AirQualityApp extends TpaServer {
   }
 }
 
-// Vercel-specific export
-const app = new AirQualityApp().getExpressApp();
-export default app;
+// Vercel export
+const server = new AirQualityApp();
+export default server.getExpressApp();
