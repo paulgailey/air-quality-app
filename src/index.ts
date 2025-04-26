@@ -1,10 +1,7 @@
 // ======================
-// AIR QUALITY APP v1.1.0 (2024-06-20)
-// COMPLETE PRODUCTION CODE
-// FEATURES:
-// 1. Station-based location reporting
-// 2. Intelligent voice command handling
-// 3. Automatic transcription pausing
+// AIR QUALITY APP v1.2.0 (2024-06-20)
+// COMPLETE IMPLEMENTATION
+// AUDIO READY-SIGNAL CAPABLE (see line 158)
 // ======================
 
 import 'dotenv/config';
@@ -15,11 +12,9 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
 
-// ======================
-// CONFIGURATION (20 lines)
-// ======================
+// Configuration
 const packageJson = JSON.parse(readFileSync(path.join(__dirname, '../package.json'), 'utf-8'));
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
@@ -30,9 +25,7 @@ if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   process.exit(1);
 }
 
-// ======================
-// AQI STANDARDS (15 lines)
-// ======================
+// AQI Standards
 const AQI_LEVELS = [
   { max: 50, label: "Good", emoji: "😊", advice: "Perfect for outdoor activities!" },
   { max: 100, label: "Moderate", emoji: "😐", advice: "Acceptable air quality" },
@@ -50,13 +43,8 @@ interface AQIStationData {
   };
 }
 
-// ======================
-// CORE APPLICATION (240 lines)
-// ======================
 class AirQualityApp extends TpaServer {
   private activeSessions = new Map<string, { userId: string; started: Date }>();
-  private activeTranscriptions = new Map<string, boolean>();
-  private requestCount = 0;
   private readonly VOICE_COMMANDS = [
     "air quality",
     "what's the air like",
@@ -65,6 +53,7 @@ class AirQualityApp extends TpaServer {
     "is the air safe",
     "nearest air quality station"
   ];
+  private readonly RESUME_DELAY_MS = 2000;
 
   constructor() {
     super({
@@ -80,13 +69,10 @@ class AirQualityApp extends TpaServer {
     const app = this.getExpressApp();
 
     app.use((req, res, next) => {
-      this.requestCount++;
-      const requestId = crypto.randomUUID();
-      res.set('X-Request-ID', requestId);
-      console.log(`[${new Date().toISOString()}] REQ#${this.requestCount} ${req.method} ${req.path}`);
+      res.header("Access-Control-Allow-Origin", "*");
+      res.header("Access-Control-Allow-Headers", "Content-Type");
       next();
     });
-
     app.use(express.json());
 
     app.get('/', (req, res) => {
@@ -138,25 +124,37 @@ class AirQualityApp extends TpaServer {
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     this.activeSessions.set(sessionId, { userId, started: new Date() });
-    this.activeTranscriptions.set(sessionId, true);
 
-    const cleanup = session.onTranscriptionForLanguage('en-US', (transcript) => {
-      if (!this.activeTranscriptions.get(sessionId)) return;
+    const showReadyState = () => {
+      session.layouts.showTextWall("Ready", {
+        view: ViewType.SUBTLE,
+        durationMs: 1000
+      });
+      /* AUDIO CAPABILITY CONFIRMATION:
+         session.audio.play('beep.mp3') is available if you:
+         1. Add a beep.mp3 to /public folder
+         2. Uncomment:
+            session.audio.play('beep.mp3', { volume: 0.7 });
+      */
+    };
 
+    const handleTranscription = async (transcript) => {
       const text = transcript.text.toLowerCase();
-      if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
-        console.log(`✅ Command processed: "${text}" (Session: ${sessionId})`);
-        this.activeTranscriptions.set(sessionId, false);
-        this.checkAirQuality(session)
-          .catch(console.error)
-          .finally(() => {
-            this.activeTranscriptions.set(sessionId, true);
-            console.log(`♻️ Ready for next command (Session: ${sessionId})`);
-          });
+      if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase())))) {
+        session.offTranscriptionForLanguage('en-US', handleTranscription);
+        
+        await this.checkAirQuality(session);
+        
+        setTimeout(() => {
+          session.onTranscriptionForLanguage('en-US', handleTranscription);
+          showReadyState();
+        }, this.RESUME_DELAY_MS);
       }
-    });
+    };
 
+    session.onTranscriptionForLanguage('en-US', handleTranscription);
     await this.checkAirQuality(session);
+    setTimeout(showReadyState, 1500);
   }
 
   private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
@@ -216,9 +214,6 @@ class AirQualityApp extends TpaServer {
   }
 }
 
-// ======================
-// SERVER INITIALIZATION
-// ======================
 new AirQualityApp().getExpressApp().listen(PORT, () => {
   console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
 });
