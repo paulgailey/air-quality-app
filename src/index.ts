@@ -9,27 +9,11 @@ import { readFileSync } from 'fs';
 // Vercel-compatible __dirname replacement
 const __dirname = new URL('.', import.meta.url).pathname;
 
-// Type augmentation for Augmentos SDK
-declare module '@augmentos/sdk' {
-  interface TpaSession {
-    location?: {
-      latitude: number;
-      longitude: number;
-    };
-    initTpaSession?(options: {
-      sessionId: string;
-      userId: string;
-      packageName: string;
-    }): Promise<void>;
-  }
-}
-
 // Configuration
 const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 const APP_VERSION = packageJson.version;
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const AQI_TOKEN = process.env.AQI_TOKEN;
@@ -58,6 +42,25 @@ interface AQIStationData {
   };
 }
 
+// Augmentos SDK Type Extensions
+declare module '@augmentos/sdk' {
+  interface TpaSession {
+    location?: {
+      latitude: number;
+      longitude: number;
+    };
+  }
+  
+  interface TpaServer {
+    initTpaSession(options: {
+      sessionId: string;
+      userId: string;
+      packageName: string;
+    }): Promise<void>;
+    getActiveSessionsCount(): number;
+  }
+}
+
 class AirQualityApp extends TpaServer {
   private requestCount = 0;
   private readonly VOICE_COMMANDS = [
@@ -73,7 +76,6 @@ class AirQualityApp extends TpaServer {
     super({
       packageName: PACKAGE_NAME,
       apiKey: AUGMENTOS_API_KEY,
-      port: PORT,
       publicDir: path.join(__dirname, '../public'),
     });
     this.setupRoutes();
@@ -82,7 +84,6 @@ class AirQualityApp extends TpaServer {
   private setupRoutes(): void {
     const app = this.getExpressApp();
 
-    // Middleware
     app.use((req, res, next) => {
       this.requestCount++;
       const requestId = crypto.randomUUID();
@@ -92,7 +93,6 @@ class AirQualityApp extends TpaServer {
     });
     app.use(express.json());
 
-    // Routes
     app.get('/', (req, res) => {
       res.json({
         status: "running",
@@ -104,7 +104,7 @@ class AirQualityApp extends TpaServer {
     app.get('/health', (req, res) => {
       res.json({
         status: "healthy",
-        sessions: this.getActiveSessionsCount()
+        sessions: this.getActiveSessionsCount?.() || 0
       });
     });
 
@@ -122,7 +122,11 @@ class AirQualityApp extends TpaServer {
     app.post('/webhook', async (req, res) => {
       if (req.body?.type === 'session_request') {
         try {
-          await this.handleSessionRequest(req.body);
+          await this.initTpaSession?.({
+            sessionId: req.body.sessionId,
+            userId: req.body.userId,
+            packageName: PACKAGE_NAME
+          });
           res.json({ status: 'success' });
         } catch (error) {
           console.error('Session init failed:', error);
@@ -131,17 +135,6 @@ class AirQualityApp extends TpaServer {
       } else {
         res.status(400).json({ status: 'error' });
       }
-    });
-  }
-
-  private async handleSessionRequest(body: any): Promise<void> {
-    if (!this.initTpaSession) {
-      throw new Error('Session initialization not available');
-    }
-    await this.initTpaSession({
-      sessionId: body.sessionId,
-      userId: body.userId,
-      packageName: PACKAGE_NAME
     });
   }
 
