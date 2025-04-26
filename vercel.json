@@ -1,0 +1,15 @@
+{
+    "version": 2,
+    "builds": [
+      {
+        "src": "src/index.ts",  // Entry file
+        "use": "@vercel/node"   // Node.js runtime
+      }
+    ],
+    "routes": [
+      {
+        "src": "/(.*)",        // Catch-all route
+        "dest": "src/index.ts" // Forward to Express
+      }
+    ]
+  }

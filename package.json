@@ -11,6 +11,8 @@
   },
   "main": "dist/index.js",
   "scripts": {
+    "build": "tsc",  // or "bun build src/index.ts --outdir dist"
+    "vercel-build": "bun run build"  // Explicit build for Vercel
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",
     "docker:dev": "docker compose -f docker/docker-compose.dev.yml -p dev up",
