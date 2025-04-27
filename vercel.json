@@ -3,14 +3,23 @@
   "builds": [
     {
       "src": "src/index.ts",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["public/**", "dist/**"]
+      }
     }
   ],
   "routes": [
     {
-      "src": "/(.*)", 
+      "src": "/public/(.*)",
+      "dest": "/public/$1",
+      "headers": {
+        "Cache-Control": "s-maxage=86400"
+      }
+    },
+    {
+      "src": "/(.*)",
       "dest": "src/index.ts"
     }
-  ],
-  "public": "public"
+  ]
 }

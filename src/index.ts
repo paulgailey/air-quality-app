@@ -101,6 +101,8 @@ class AirQualityApp {
     
     app.use(express.json());
 
+    app.use('/public', express.static(path.join(__dirname, '../public')));
+
     app.get('/', (req: express.Request, res: express.Response) => {
       res.json({
         status: "running",
@@ -214,6 +216,18 @@ class AirQualityApp {
   }
 }
 
-// Create app instance and export for Vercel
+// Create app instance
 const server = new AirQualityApp();
-export default server.getExpressApp();
+const app = server.getExpressApp();
+
+// Local development handling
+if (process.env.NODE_ENV !== 'production') {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`✅ Server running on http://localhost:${PORT}`);
+        console.log(`📂 Serving static files from ${path.join(__dirname, '../public')}`);
+    });
+}
+
+// Export for Vercel (must keep this)
+export default app;
