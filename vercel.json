@@ -1,6 +1,4 @@
-# Create/update vercel.json with correct settings
-@'
-{
+﻿{
   "version": 2,
   "builds": [
     {
@@ -16,4 +14,3 @@
   ],
   "public": "public"
 }
-'@ | Out-File -FilePath .\vercel.json -Encoding utf8
