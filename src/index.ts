@@ -27,7 +27,7 @@ const packageJson = JSON.parse(
   readFileSync(packageJsonPath, 'utf-8')
 );
 const APP_VERSION = packageJson.version;
-const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
+const PACKAGE_NAME = 'air-quality-app'; // Hardcoded to match Augmentos console
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
 const AQI_TOKEN = process.env.AQI_TOKEN as string;
 
@@ -73,6 +73,7 @@ class AirQualityApp {
       packageName: PACKAGE_NAME,
       apiKey: AUGMENTOS_API_KEY,
       publicDir: path.join(__dirname, '../public'),
+      wsOptions: { perMessageDeflate: false }
     });
 
     // Store session handler reference
