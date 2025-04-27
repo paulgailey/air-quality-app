@@ -165,7 +165,11 @@ class AirQualityApp {
     try {
       const response = await axios.get(
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
-        { timeout: 3000 }
+        { timeout: 3000,
+          headers: {
+            'Accept-Encoding': 'gzip, deflate'
+          }
+         }
       );
       if (response.data.status !== 'ok') {
         throw new Error(response.data.data || 'Station data unavailable');
