@@ -233,3 +233,8 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Export for Vercel (must keep this)
 export default app;
+// At the end of your index.ts
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
