@@ -17,7 +17,7 @@
     "docker:dev:detach": "./scripts/docker-dev.sh -d",
     "docker:stop": "docker compose -f docker/docker-compose.dev.yml -p dev down",
     "postinstall": "npx npm-force-resolutions",
-    "build": "tsc",
+    "build": "mkdir public & tsc",
     "vercel-build": "bun run build"
   },
   "dependencies": {
@@ -39,3 +39,4 @@
     "jsonwebtoken": "9.0.2"
   }
 }
+

@@ -1,4 +1,19 @@
+# Create/update vercel.json with correct settings
+@'
 {
-    "version": 2
-  }
-  
+  "version": 2,
+  "builds": [
+    {
+      "src": "src/index.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)", 
+      "dest": "src/index.ts"
+    }
+  ],
+  "public": "public"
+}
+'@ | Out-File -FilePath .\vercel.json -Encoding utf8
