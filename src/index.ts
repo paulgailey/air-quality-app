@@ -6,9 +6,14 @@ if (!(global as any).WebSocket) {
 import express from 'express';
 import path from 'path';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
-import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
+
+// Fix for Bun's missing Brotli support
+import axios from 'axios';
+import httpAdapter from 'axios/lib/adapters/http';
+
+axios.defaults.adapter = httpAdapter;  // Force HTTP adapter
 
 // Augmentos SDK Type Extensions
 declare module '@augmentos/sdk' {
