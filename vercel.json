@@ -5,21 +5,26 @@
       "src": "src/index.ts",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["public/**"],
+        "includeFiles": ["public/**", "src/**/*.ts"],
         "maxLambdaSize": "50mb",
-        "runtime": "nodejs18.x"
+        "runtime": "nodejs18.x",
+        "zeroConfig": true
       }
     }
   ],
   "routes": [
     {
       "src": "/public/(.*)",
-      "dest": "/public/$1"
+      "dest": "/public/$1",
+      "headers": { "Cache-Control": "public, max-age=3600" }
     },
     {
       "src": "/(.*)",
       "dest": "src/index.ts",
-      "headers": { "Cache-Control": "no-store" }
+      "headers": { 
+        "Cache-Control": "no-store",
+        "X-Robots-Tag": "noindex"
+      }
     }
   ]
 }
