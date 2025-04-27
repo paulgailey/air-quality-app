@@ -11,9 +11,12 @@ import { readFileSync } from 'fs';
 
 // Fix for Bun's missing Brotli support
 import axios from 'axios';
-import httpAdapter from 'axios/lib/adapters/http';
+import http from 'http';
+import https from 'https';
 
-axios.defaults.adapter = httpAdapter;  // Force HTTP adapter
+axios.defaults.adapter = (config) => {
+  const transport = config.url?.startsWith('https:') ? https : http;
+  return transport.request(config);
 
 // Augmentos SDK Type Extensions
 declare module '@augmentos/sdk' {
