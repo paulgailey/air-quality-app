@@ -1,6 +1,8 @@
 import 'dotenv/config';
-import { WebSocket } from 'ws';
-(global as any).WebSocket = WebSocket;  // Use the imported class
+// Only set WebSocket once, don't overwrite if already exists
+if (!(global as any).WebSocket) {
+  (global as any).WebSocket = WebSocket;
+}
 import express from 'express';
 import path from 'path';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
@@ -19,7 +21,8 @@ declare module '@augmentos/sdk' {
 }
 
 // Cross-platform path handling
-const __dirname = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1'));
+import { fileURLToPath } from 'url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = path.resolve(__dirname, '../package.json');
 
 // Configuration
@@ -233,8 +236,8 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Export for Vercel (must keep this)
 export default app;
-// At the end of your index.ts
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+// At the bottom of your file, replace the environment check:
+const PORT = parseInt(process.env.PORT || '3000', 10);
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
