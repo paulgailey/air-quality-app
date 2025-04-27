@@ -6,12 +6,23 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
 
-// Vercel-compatible __dirname replacement
-const __dirname = new URL('.', import.meta.url).pathname;
+// Augmentos SDK Type Extensions
+declare module '@augmentos/sdk' {
+  interface TpaSession {
+    location?: {
+      latitude: number;
+      longitude: number;
+    };
+  }
+}
+
+// Cross-platform path handling
+const __dirname = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1'));
+const packageJsonPath = path.resolve(__dirname, '../package.json');
 
 // Configuration
 const packageJson = JSON.parse(
-  readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
+  readFileSync(packageJsonPath, 'utf-8')
 );
 const APP_VERSION = packageJson.version;
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
@@ -42,7 +53,6 @@ interface AQIStationData {
   };
 }
 
-// Use composition pattern instead of inheritance
 class AirQualityApp {
   private server: TpaServer;
   private requestCount = 0;
@@ -54,6 +64,7 @@ class AirQualityApp {
     "is the air safe",
     "nearest air quality station"
   ];
+  private sessionHandler?: (session: TpaSession, sessionId: string, userId: string) => Promise<void>;
 
   constructor() {
     this.server = new TpaServer({
@@ -61,9 +72,14 @@ class AirQualityApp {
       apiKey: AUGMENTOS_API_KEY,
       publicDir: path.join(__dirname, '../public'),
     });
+
+    // Store session handler reference
+    this.sessionHandler = this.handleSession.bind(this);
     
-    // Register session handler
-    this.server.onSession = this.onSession.bind(this);
+    // Direct assignment with type safety
+    Object.assign(this.server, {
+      onSession: this.sessionHandler
+    });
     
     this.setupRoutes();
   }
@@ -75,7 +91,7 @@ class AirQualityApp {
   private setupRoutes(): void {
     const app = this.getExpressApp();
 
-    app.use((req, res, next) => {
+    app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
       this.requestCount++;
       const requestId = crypto.randomUUID();
       res.set('X-Request-ID', requestId);
@@ -85,7 +101,7 @@ class AirQualityApp {
     
     app.use(express.json());
 
-    app.get('/', (req, res) => {
+    app.get('/', (req: express.Request, res: express.Response) => {
       res.json({
         status: "running",
         version: APP_VERSION,
@@ -93,14 +109,14 @@ class AirQualityApp {
       });
     });
 
-    app.get('/health', (req, res) => {
+    app.get('/health', (req: express.Request, res: express.Response) => {
       res.json({
         status: "healthy",
         sessions: 0
       });
     });
 
-    app.get('/tpa_config.json', (req, res) => {
+    app.get('/tpa_config.json', (req: express.Request, res: express.Response) => {
       res.json({
         voiceCommands: this.VOICE_COMMANDS.map(phrase => ({
           phrase,
@@ -111,10 +127,9 @@ class AirQualityApp {
       });
     });
 
-    app.post('/webhook', async (req, res) => {
+    app.post('/webhook', async (req: express.Request, res: express.Response) => {
       if (req.body?.type === 'session_request') {
         try {
-          // Use a basic handler since initTpaSession seems to be causing issues
           console.log('Session request received:', req.body.sessionId);
           res.json({ status: 'success' });
         } catch (error) {
@@ -127,7 +142,7 @@ class AirQualityApp {
     });
   }
 
-  private async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
+  private async handleSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     session.onTranscriptionForLanguage('en-US', (transcript) => {
       const text = transcript.text.toLowerCase();
       console.log(`🎤 Heard: "${text}"`);
@@ -200,5 +215,5 @@ class AirQualityApp {
 }
 
 // Create app instance and export for Vercel
-const app = new AirQualityApp();
-export default app.getExpressApp();
+const server = new AirQualityApp();
+export default server.getExpressApp();
