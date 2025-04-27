@@ -5,17 +5,16 @@
       "src": "src/index.ts",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": [
-          "public/**",
-          "dist/**"
-        ]
+        "includeFiles": ["public/**"],
+        "maxLambdaSize": "50mb",
+        "runtime": "nodejs18.x"
       }
     }
   ],
   "routes": [
     {
       "src": "/public/(.*)",
-      "dest": "/public/"
+      "dest": "/public/$1"
     },
     {
       "src": "/(.*)",

@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import ws from 'ws';
+(global as any).WebSocket = ws;
 import express from 'express';
 import path from 'path';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
