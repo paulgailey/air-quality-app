@@ -15,8 +15,9 @@ const packageJson = JSON.parse(
 );
 const APP_VERSION = packageJson.version;
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
-const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
-const AQI_TOKEN = process.env.AQI_TOKEN;
+// Fix: Add type assertions for environment variables
+const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
+const AQI_TOKEN = process.env.AQI_TOKEN as string;
 
 // Validate environment
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
@@ -42,7 +43,7 @@ interface AQIStationData {
   };
 }
 
-// Augmentos SDK Type Extensions
+// Augmentos SDK Type Extensions - avoid duplicating private properties
 declare module '@augmentos/sdk' {
   interface TpaSession {
     location?: {
@@ -51,14 +52,25 @@ declare module '@augmentos/sdk' {
     };
   }
   
-  interface TpaServer {
-    initTpaSession(options: {
-      sessionId: string;
-      userId: string;
-      packageName: string;
-    }): Promise<void>;
-    getActiveSessionsCount(): number;
-  }
+  // Fix: Remove the TpaServer interface extension that conflicts with the base class
+  // interface TpaServer {
+  //   initTpaSession(options: {
+  //     sessionId: string;
+  //     userId: string;
+  //     packageName: string;
+  //   }): Promise<void>;
+  //   getActiveSessionsCount(): number;
+  // }
+}
+
+// Add this interface to define the methods without extending the base class properties
+interface TpaServerExtended {
+  initTpaSession(options: {
+    sessionId: string;
+    userId: string;
+    packageName: string;
+  }): Promise<void>;
+  getActiveSessionsCount(): number;
 }
 
 class AirQualityApp extends TpaServer {
@@ -102,9 +114,14 @@ class AirQualityApp extends TpaServer {
     });
 
     app.get('/health', (req, res) => {
+      // Fix: Optional chaining with fallback for potentially undefined method
+      const sessionsCount = typeof (this as unknown as TpaServerExtended).getActiveSessionsCount === 'function' 
+        ? (this as unknown as TpaServerExtended).getActiveSessionsCount() 
+        : 0;
+        
       res.json({
         status: "healthy",
-        sessions: this.getActiveSessionsCount?.() || 0
+        sessions: sessionsCount
       });
     });
 
@@ -122,12 +139,18 @@ class AirQualityApp extends TpaServer {
     app.post('/webhook', async (req, res) => {
       if (req.body?.type === 'session_request') {
         try {
-          await this.initTpaSession?.({
-            sessionId: req.body.sessionId,
-            userId: req.body.userId,
-            packageName: PACKAGE_NAME
-          });
-          res.json({ status: 'success' });
+          // Fix: Type casting to access the extension method
+          const extendedThis = this as unknown as TpaServerExtended;
+          if (typeof extendedThis.initTpaSession === 'function') {
+            await extendedThis.initTpaSession({
+              sessionId: req.body.sessionId,
+              userId: req.body.userId,
+              packageName: PACKAGE_NAME
+            });
+            res.json({ status: 'success' });
+          } else {
+            throw new Error('initTpaSession method not available');
+          }
         } catch (error) {
           console.error('Session init failed:', error);
           res.status(500).json({ status: 'error' });
