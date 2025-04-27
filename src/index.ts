@@ -17,6 +17,7 @@ import https from 'https';
 axios.defaults.adapter = (config) => {
   const transport = config.url?.startsWith('https:') ? https : http;
   return transport.request(config);
+};
 
 // Augmentos SDK Type Extensions
 declare module '@augmentos/sdk' {
