@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import ws from 'ws';
-(global as any).WebSocket = ws;
+import { WebSocket } from 'ws';
+(global as any).WebSocket = WebSocket;  // Use the imported class
 import express from 'express';
 import path from 'path';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
@@ -72,8 +72,7 @@ class AirQualityApp {
     this.server = new TpaServer({
       packageName: PACKAGE_NAME,
       apiKey: AUGMENTOS_API_KEY,
-      publicDir: path.join(__dirname, '../public'),
-      wsOptions: { perMessageDeflate: false }
+      publicDir: path.join(__dirname, '../public')
     });
 
     // Store session handler reference

@@ -1,15 +1,14 @@
 ﻿{
   "compilerOptions": {
     "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "NodeNext",  //  CRITICAL ADDITION
+    "module": "NodeNext",  // ONLY CHANGE: ESNext to NodeNext
+    "moduleResolution": "NodeNext",
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "types": ["node"]  //  ADD NODE TYPES
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules"]
