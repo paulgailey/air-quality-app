@@ -1,21 +1,21 @@
-﻿{
+{
   "version": 2,
   "builds": [
     {
       "src": "src/index.ts",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["public/**", "dist/**"]
+        "includeFiles": [
+          "public/**",
+          "dist/**"
+        ]
       }
     }
   ],
   "routes": [
     {
       "src": "/public/(.*)",
-      "dest": "/public/$1",
-      "headers": {
-        "Cache-Control": "s-maxage=86400"
-      }
+      "dest": "/public/"
     },
     {
       "src": "/(.*)",
