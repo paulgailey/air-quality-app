@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { WebSocket } from 'ws';
-(global as any).WebSocket = WebSocket;
+(global as any).WebSocket = WebSocket;  // Use the imported class
 import express from 'express';
 import path from 'path';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
@@ -27,7 +27,7 @@ const packageJson = JSON.parse(
   readFileSync(packageJsonPath, 'utf-8')
 );
 const APP_VERSION = packageJson.version;
-const PACKAGE_NAME = 'air-quality-app';
+const PACKAGE_NAME = 'air-quality-app'; // Hardcoded to match Augmentos console
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
 const AQI_TOKEN = process.env.AQI_TOKEN as string;
 
@@ -69,31 +69,16 @@ class AirQualityApp {
   private sessionHandler?: (session: TpaSession, sessionId: string, userId: string) => Promise<void>;
 
   constructor() {
-    // Initialize Express with enhanced logging
-    const app = express();
-    app.use((req, res, next) => {
-      console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-      console.log('Headers:', JSON.stringify(req.headers, null, 2));
-      console.log('IP:', req.ip);
-      next();
-    });
-
-    // Initialize TpaServer with debug mode
     this.server = new TpaServer({
       packageName: PACKAGE_NAME,
       apiKey: AUGMENTOS_API_KEY,
-      publicDir: path.join(__dirname, '../public'),
-      debug: true
-    });
-
-    // WebSocket connection logger
-    this.server.on('connection', (socket) => {
-      console.log('WebSocket connected:', socket.id);
+      publicDir: path.join(__dirname, '../public')
     });
 
     // Store session handler reference
     this.sessionHandler = this.handleSession.bind(this);
     
+    // Direct assignment with type safety
     Object.assign(this.server, {
       onSession: this.sessionHandler
     });
@@ -229,7 +214,7 @@ class AirQualityApp {
     } catch (error) {
       console.warn("IP geolocation failed:", error);
     }
-    return { lat: 51.5074, lon: -0.1278 };
+    return { lat: 51.5074, lon: -0.1278 }; // London fallback
   }
 }
 
@@ -246,4 +231,5 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
+// Export for Vercel (must keep this)
 export default app;
