@@ -215,7 +215,7 @@ class AirQualityApp {
         { 
           timeout: 3000,
           headers: {
-            'Accept-Encoding': 'gzip, deflate'
+            'Accept-Encoding': 'gzip'
           }
         }
       );
