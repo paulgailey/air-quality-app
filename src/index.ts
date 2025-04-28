@@ -9,15 +9,44 @@ import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
 
-// Fix for Bun's missing Brotli support
+// Properly typed axios adapter for Bun
 import axios from 'axios';
 import http from 'http';
 import https from 'https';
+import type { AxiosAdapter, AxiosRequestConfig, AxiosResponse } from 'axios';
 
-axios.defaults.adapter = (config) => {
-  const transport = config.url?.startsWith('https:') ? https : http;
-  return transport.request(config);
+const httpAdapter: AxiosAdapter = (config: AxiosRequestConfig) => {
+  return new Promise((resolve, reject) => {
+    const transport = config.url?.startsWith('https:') ? https : http;
+    const req = transport.request(
+      config.url!,
+      {
+        method: config.method?.toUpperCase(),
+        headers: config.headers,
+        auth: config.auth?.username 
+          ? `${config.auth.username}:${config.auth.password || ''}`
+          : undefined
+      },
+      (res) => {
+        const response: AxiosResponse = {
+          data: res,
+          status: res.statusCode || 500,
+          statusText: res.statusMessage || '',
+          headers: res.headers,
+          config: config as AxiosRequestConfig,
+          request: req
+        };
+        resolve(response);
+      }
+    );
+
+    req.on('error', reject);
+    if (config.data) req.write(config.data);
+    req.end();
+  });
 };
+
+axios.defaults.adapter = httpAdapter;
 
 // Augmentos SDK Type Extensions
 declare module '@augmentos/sdk' {
@@ -172,17 +201,29 @@ class AirQualityApp {
 
   private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
     try {
-      const response = await axios.get(
+      const response = await axios.get<{
+        status: string;
+        data: {
+          aqi: number;
+          city: {
+            name: string;
+            geo: [number, number];
+          };
+        };
+      }>(
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
-        { timeout: 3000,
+        { 
+          timeout: 3000,
           headers: {
             'Accept-Encoding': 'gzip, deflate'
           }
-         }
+        }
       );
+      
       if (response.data.status !== 'ok') {
-        throw new Error(response.data.data || 'Station data unavailable');
+        throw new Error('Station data unavailable');
       }
+      
       return {
         aqi: response.data.data.aqi,
         station: {
@@ -223,9 +264,16 @@ class AirQualityApp {
 
   private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
     try {
-      const ip = await axios.get('https://ipapi.co/json/', { timeout: 2000 });
-      if (ip.data.latitude && ip.data.longitude) {
-        return { lat: ip.data.latitude, lon: ip.data.longitude };
+      const response = await axios.get<{
+        latitude: number;
+        longitude: number;
+      }>('https://ipapi.co/json/', { timeout: 2000 });
+      
+      if (response.data.latitude && response.data.longitude) {
+        return { 
+          lat: response.data.latitude, 
+          lon: response.data.longitude 
+        };
       }
     } catch (error) {
       console.warn("IP geolocation failed:", error);
@@ -238,19 +286,9 @@ class AirQualityApp {
 const server = new AirQualityApp();
 const app = server.getExpressApp();
 
-// Local development handling
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-  app.listen(PORT, '0.0.0.0', () => {
-      console.log(`✅ Server running on http://localhost:${PORT}`);
-      console.log(`📂 Serving static files from ${path.join(__dirname, '../public')}`);
-  });
-}
-
-// Export for Vercel (must keep this)
-export default app;
-// At the bottom of your file, replace the environment check:
+// Start server
 const PORT = parseInt(process.env.PORT || '3000', 10);
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server running on port ${PORT}`);
+  console.log(`📂 Serving static files from ${path.join(__dirname, '../public')}`);
 });
