@@ -217,7 +217,7 @@ class AirQualityApp {
       }>(
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
         { 
-          timeout: 10000,
+          timeout: 3000,
           headers: {
             'Accept-Encoding': 'gzip'
           }
