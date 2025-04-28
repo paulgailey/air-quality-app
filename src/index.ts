@@ -22,7 +22,11 @@ const httpAdapter: AxiosAdapter = (config: AxiosRequestConfig) => {
       config.url!,
       {
         method: config.method?.toUpperCase(),
-        headers: config.headers,
+        headers: config.headers 
+          ? Object.fromEntries(
+              Object.entries(config.headers).filter(([_, value]) => value !== null && value !== undefined)
+            ) as http.OutgoingHttpHeaders
+          : undefined,
         auth: config.auth?.username 
           ? `${config.auth.username}:${config.auth.password || ''}`
           : undefined
@@ -32,7 +36,7 @@ const httpAdapter: AxiosAdapter = (config: AxiosRequestConfig) => {
           data: res,
           status: res.statusCode || 500,
           statusText: res.statusMessage || '',
-          headers: res.headers,
+          headers: Object.fromEntries(Object.entries(res.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(', ') : value || ''])) as Record<string, string>,
           config: config as AxiosRequestConfig,
           request: req
         };
