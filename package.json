@@ -1,5 +1,5 @@
 {
-  "name": "@everywoah/air-quality",
+  "name": "air-quality-app",
   "version": "1.2.0",
   "type": "module",
   "main": "dist/index.js",
@@ -19,7 +19,7 @@
     "@types/node": "20.11.19",
     "@types/ws": "8.18.1",
     "@types/express": "5.0.1",
-    "typescript": "5.0.0"
+    "typescript": "5.3.3"
   },
   "engines": {
     "node": "18.x"
