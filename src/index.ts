@@ -1,4 +1,4 @@
-// src/index.ts v1.5.0
+// src/index.ts v1.5.1
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
@@ -8,6 +8,7 @@ import axios from 'axios';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 
+// Augment the Augmentos SDK types
 declare module '@augmentos/sdk' {
   interface TpaSession {
     location?: {
@@ -16,6 +17,17 @@ declare module '@augmentos/sdk' {
     };
     lastLocationUpdate?: number;
   }
+
+  // Define the LocationUpdate interface
+  interface LocationUpdate {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    timestamp?: number;
+  }
+
+  // Define the Handler type for events
+  type Handler<T> = (payload: T) => void;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,14 +35,14 @@ const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.1';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
 const AQI_TOKEN = process.env.AQI_TOKEN || '';
 const ENVIRONMENT = process.env.NODE_ENV || 'production';
-const MAX_RESPONSE_TIME_MS = 7000; // 7 second maximum
-const LOCATION_TIMEOUT_MS = 5000; // 5 seconds to get location
+const MAX_RESPONSE_TIME_MS = 7000;
+const LOCATION_TIMEOUT_MS = 5000;
 
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   console.error('❌ Missing required environment variables');
@@ -89,15 +101,6 @@ class AirQualityApp extends TpaServer {
 
     app.use(express.json());
 
-    app.get('/', (req, res) => {
-      res.json({
-        status: "running",
-        version: APP_VERSION,
-        environment: ENVIRONMENT,
-        endpoints: ['/health', '/version', '/tpa_config.json']
-      });
-    });
-
     app.get('/tpa_config.json', (req, res) => {
       res.json({
         voiceCommands: this.VOICE_COMMANDS.map(phrase => ({
@@ -114,13 +117,11 @@ class AirQualityApp extends TpaServer {
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`🚀 Session started for ${userId}`);
-
-    // Show listening indicator
     await this.showListeningState(session, true);
 
     const handlers = {
       active: true,
-      location: async (update: { latitude: number; longitude: number }) => {
+      location: (update: { latitude: number; longitude: number }) => {
         if (!handlers.active) return;
         session.location = {
           latitude: update.latitude,
@@ -131,7 +132,6 @@ class AirQualityApp extends TpaServer {
       },
       voice: async (transcript: { text: string }) => {
         if (!handlers.active) return;
-        
         const text = transcript.text.toLowerCase();
         if (!this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) return;
 
@@ -141,13 +141,11 @@ class AirQualityApp extends TpaServer {
         try {
           await this.handleAirQualityRequest(session);
         } finally {
-          // Return to listening state
           await this.showListeningState(session, true);
         }
       }
     };
 
-    // Set up listeners
     session.events.onLocation(handlers.location);
     session.onTranscriptionForLanguage('en-US', handlers.voice);
     session.events.onDisconnected(() => {
@@ -155,7 +153,6 @@ class AirQualityApp extends TpaServer {
       console.log(`🛑 Session ended for ${userId}`);
     });
 
-    // Initial location check
     if (session.location) {
       session.lastLocationUpdate = Date.now();
     }
@@ -209,8 +206,7 @@ class AirQualityApp extends TpaServer {
   }
 
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    // Haversine formula
-    const R = 6371; // Earth radius in km
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = 
@@ -225,7 +221,6 @@ class AirQualityApp extends TpaServer {
     const startTime = Date.now();
     
     try {
-      // Check for recent location
       if (!session.location || !session.lastLocationUpdate || 
           Date.now() - session.lastLocationUpdate > LOCATION_TIMEOUT_MS) {
         throw new Error('Location not available or outdated');
@@ -236,7 +231,7 @@ class AirQualityApp extends TpaServer {
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
 
       const remainingTime = MAX_RESPONSE_TIME_MS - (Date.now() - startTime);
-      const displayTime = Math.max(remainingTime, 3000); // Minimum 3 seconds display
+      const displayTime = Math.max(remainingTime, 3000);
 
       await session.layouts.showTextWall(
         `📍 ${station.station.name} (${station.station.distance.toFixed(1)}km)\n\n` +
@@ -245,7 +240,6 @@ class AirQualityApp extends TpaServer {
         `Recommendation: ${quality.advice}`,
         { view: ViewType.MAIN, durationMs: displayTime }
       );
-
     } catch (error) {
       console.error('Air quality check failed:', error);
       const remainingTime = MAX_RESPONSE_TIME_MS - (Date.now() - startTime);
@@ -257,15 +251,6 @@ class AirQualityApp extends TpaServer {
       );
     }
   }
-}
-
-// Alternative hosting recommendation
-if (ENVIRONMENT === 'production' && process.env.RENDER) {
-  console.warn('⚠️ Render.com may not be ideal for location-based apps');
-  console.warn('Consider these alternatives for better geo performance:');
-  console.warn('- Fly.io (global edge locations)');
-  console.warn('- Railway.app (better networking)');
-  console.warn('- AWS Lightsail (fixed location)');
 }
 
 new AirQualityApp().getExpressApp().listen(PORT, () => {
