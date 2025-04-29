@@ -1,4 +1,4 @@
-// src/index.ts v1.3.6
+// src/index.ts v1.4.1
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
@@ -7,8 +7,6 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
-import geoLocationMiddleware from './middleware/geoLocationMiddleware';
-
 
 declare module '@augmentos/sdk' {
   interface TpaSession {
@@ -18,12 +16,11 @@ declare module '@augmentos/sdk' {
     };
   }
 
-  interface TpaServer {
-    initTpaSession(params: {
-      sessionId: string;
-      userId: string;
-      packageName: string;
-    }): Promise<void>;
+  interface LocationUpdate {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    timestamp?: number;
   }
 }
 
@@ -32,7 +29,7 @@ const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 
-const APP_VERSION = '1.3.6';
+const APP_VERSION = '1.4.1';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
@@ -86,8 +83,6 @@ class AirQualityApp extends TpaServer {
   private setupRoutes(): void {
     const app = this.getExpressApp();
 
-    app.use(geoLocationMiddleware);
-
     app.use((req, res, next) => {
       this.requestCount++;
       const requestId = crypto.randomUUID();
@@ -125,36 +120,37 @@ class AirQualityApp extends TpaServer {
         transcriptionLanguages: ["en-US"]
       });
     });
-
-    app.post('/webhook', async (req, res) => {
-      if (req.body?.type === 'session_request') {
-        try {
-          await this.initTpaSession({
-            sessionId: req.body.sessionId,
-            userId: req.body.userId,
-            packageName: PACKAGE_NAME
-          });
-          res.json({ status: 'success' });
-        } catch (error) {
-          console.error('Session init failed:', error);
-          res.status(500).json({ status: 'error' });
-        }
-      } else {
-        res.status(400).json({ status: 'error' });
-      }
-    });
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
+    // Subscribe to location updates with proper typing
+    session.events.onLocation((locationUpdate) => {
+      console.log(`📍 Received location update:`, 
+        `${locationUpdate.latitude}, ${locationUpdate.longitude}` +
+        (locationUpdate.accuracy ? ` (±${locationUpdate.accuracy}m)` : '')
+      );
+      
+      session.location = {
+        latitude: locationUpdate.latitude,
+        longitude: locationUpdate.longitude
+      };
+      
+      this.handleAirQualityRequest(session).catch(console.error);
+    });
+
+    // Handle voice commands
     session.onTranscriptionForLanguage('en-US', (transcript) => {
       const text = transcript.text.toLowerCase();
       console.log(`🎤 Heard: "${text}"`);
       if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
-        this.checkAirQuality(session).catch(console.error);
+        this.handleAirQualityRequest(session).catch(console.error);
       }
     });
 
-    await this.checkAirQuality(session);
+    // Initial check if location is already available
+    if (session.location) {
+      await this.handleAirQualityRequest(session);
+    }
   }
 
   private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
@@ -168,8 +164,9 @@ class AirQualityApp extends TpaServer {
       );
 
       if (response.data.status !== 'ok') {
-        throw new Error('Station data unavailable');
+        throw new Error(response.data.data || 'Station data unavailable');
       }
+      
       return {
         aqi: response.data.data.aqi,
         station: {
@@ -179,19 +176,24 @@ class AirQualityApp extends TpaServer {
       };
     } catch (error) {
       console.error('AQI station fetch failed:', error);
-      throw error;
+      throw new Error('Failed to fetch air quality data');
     }
   }
 
-  private async checkAirQuality(session: TpaSession): Promise<void> {
+  private async handleAirQualityRequest(session: TpaSession): Promise<void> {
     try {
-      const coords = session.location
-        ? { lat: session.location.latitude, lon: session.location.longitude }
-        : await this.getApproximateCoords();
+      if (!session.location) {
+        await session.layouts.showTextWall(
+          "Please enable location services to check air quality",
+          { view: ViewType.MAIN, durationMs: 5000 }
+        );
+        return;
+      }
 
-      console.log(`📍 Using coordinates: ${coords.lat}, ${coords.lon}`);
+      const { latitude, longitude } = session.location;
+      console.log(`📍 Using device coordinates: ${latitude}, ${longitude}`);
 
-      const station = await this.getNearestAQIStation(coords.lat, coords.lon);
+      const station = await this.getNearestAQIStation(latitude, longitude);
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
 
       await session.layouts.showTextWall(
@@ -199,41 +201,15 @@ class AirQualityApp extends TpaServer {
         `Air Quality: ${quality.label} ${quality.emoji}\n` +
         `AQI: ${station.aqi}\n\n` +
         `${quality.advice}`,
-        { view: ViewType.MAIN, durationMs: 10000 }
+        { view: ViewType.MAIN, durationMs: 15000 }
       );
     } catch (error) {
-      console.error("Check failed:", error);
-      await session.layouts.showTextWall("Air quality unavailable", {
-        view: ViewType.MAIN,
-        durationMs: 3000
-      });
+      console.error("Air quality check failed:", error);
+      await session.layouts.showTextWall(
+        "Unable to fetch air quality data. Please try again later.",
+        { view: ViewType.MAIN, durationMs: 5000 }
+      );
     }
-  }
-
-  private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
-    if (ENVIRONMENT === 'test') {
-      console.log('📡 Test mode: using hardcoded Murcia fallback location');
-      return { lat: 37.9838, lon: -1.1294 };
-    }
-
-    try {
-      const ip = await axios.get('https://ipapi.co/json/', {
-        timeout: 2000,
-        headers: { 'Accept-Encoding': 'gzip, deflate' }
-      });
-
-      if (ip.data.latitude && ip.data.longitude) {
-        console.log(`📡 IP-based location resolved: ${ip.data.city}, ${ip.data.country_name}`);
-        return { lat: ip.data.latitude, lon: ip.data.longitude };
-      } else {
-        console.warn("⚠️ Incomplete IP geolocation data.");
-      }
-    } catch (error) {
-      console.warn("⚠️ IP geolocation failed:", error);
-    }
-
-    console.log('📡 Fallback to default location: London');
-    return { lat: 51.5074, lon: -0.1278 };
   }
 }
 
