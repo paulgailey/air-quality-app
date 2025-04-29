@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
-import geoLocationMiddleware from './geoLocationMiddleware'; // <-- Import the geolocation middleware
+import geoLocationMiddleware from './middleware/geoLocationMiddleware'; // <-- Import the geolocation middleware
 
 declare module '@augmentos/sdk' {
   interface TpaSession {
