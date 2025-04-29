@@ -1,4 +1,4 @@
-// src/index.ts v1.4.1
+// src/index.ts v1.4.7
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
@@ -29,7 +29,7 @@ const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.4.7';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
@@ -117,34 +117,53 @@ class AirQualityApp extends TpaServer {
           description: "Check air quality"
         })),
         permissions: ["location"],
-        transcriptionLanguages: ["en-US"]
+        transcriptionLanguages: ["en-US"],
+        requires: ["location"]
       });
     });
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
-    // Subscribe to location updates with proper typing
-    session.events.onLocation((locationUpdate) => {
-      console.log(`📍 Received location update:`, 
-        `${locationUpdate.latitude}, ${locationUpdate.longitude}` +
-        (locationUpdate.accuracy ? ` (±${locationUpdate.accuracy}m)` : '')
-      );
-      
-      session.location = {
-        latitude: locationUpdate.latitude,
-        longitude: locationUpdate.longitude
-      };
-      
-      this.handleAirQualityRequest(session).catch(console.error);
-    });
+    console.log(`🚀 Session started for ${userId}`);
 
-    // Handle voice commands
-    session.onTranscriptionForLanguage('en-US', (transcript) => {
-      const text = transcript.text.toLowerCase();
-      console.log(`🎤 Heard: "${text}"`);
-      if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
+    // Create handler container object
+    const handlers = {
+      active: true,
+      location: (update: { latitude: number; longitude: number }) => {
+        if (!handlers.active) return;
+        console.log(`📍 Location update: ${update.latitude}, ${update.longitude}`);
+        session.location = {
+          latitude: update.latitude,
+          longitude: update.longitude
+        };
         this.handleAirQualityRequest(session).catch(console.error);
+      },
+      voice: async (transcript: { text: string }) => {
+        if (!handlers.active) return;
+        const text = transcript.text.toLowerCase();
+        console.log(`🎤 Heard: "${text}"`);
+
+        if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
+          if (!session.location) {
+            await session.layouts.showTextWall(
+              "Getting your location...",
+              { view: ViewType.MAIN, durationMs: 2000 }
+            );
+            return;
+          }
+          await this.handleAirQualityRequest(session);
+        }
       }
+    };
+
+    // Set up listeners
+    session.events.onLocation(handlers.location);
+    session.onTranscriptionForLanguage('en-US', handlers.voice);
+
+    // Proper cleanup using onDisconnected
+    session.events.onDisconnected(() => {
+      console.log(`🛑 Session disconnected for ${userId}`);
+      handlers.active = false;
     });
 
     // Initial check if location is already available
@@ -157,25 +176,22 @@ class AirQualityApp extends TpaServer {
     try {
       const response = await axios.get(
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
-        {
-          timeout: 3000,
-          headers: { 'Accept-Encoding': 'gzip, deflate' }
-        }
+        { timeout: 3000 }
       );
 
       if (response.data.status !== 'ok') {
-        throw new Error(response.data.data || 'Station data unavailable');
+        throw new Error(response.data.data || 'AQI API error');
       }
-      
+
       return {
         aqi: response.data.data.aqi,
         station: {
-          name: response.data.data.city?.name || 'Nearest AQI station',
+          name: response.data.data.city?.name || 'Nearest station',
           geo: response.data.data.city?.geo || [lat, lon]
         }
       };
     } catch (error) {
-      console.error('AQI station fetch failed:', error);
+      console.error('AQI API failure:', error);
       throw new Error('Failed to fetch air quality data');
     }
   }
@@ -183,16 +199,10 @@ class AirQualityApp extends TpaServer {
   private async handleAirQualityRequest(session: TpaSession): Promise<void> {
     try {
       if (!session.location) {
-        await session.layouts.showTextWall(
-          "Please enable location services to check air quality",
-          { view: ViewType.MAIN, durationMs: 5000 }
-        );
-        return;
+        throw new Error('Location not available');
       }
 
       const { latitude, longitude } = session.location;
-      console.log(`📍 Using device coordinates: ${latitude}, ${longitude}`);
-
       const station = await this.getNearestAQIStation(latitude, longitude);
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
 
@@ -204,9 +214,9 @@ class AirQualityApp extends TpaServer {
         { view: ViewType.MAIN, durationMs: 15000 }
       );
     } catch (error) {
-      console.error("Air quality check failed:", error);
+      console.error('Air quality check failed:', error);
       await session.layouts.showTextWall(
-        "Unable to fetch air quality data. Please try again later.",
+        "Unable to get air quality data. Please try again.",
         { view: ViewType.MAIN, durationMs: 5000 }
       );
     }
