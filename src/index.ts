@@ -9,6 +9,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import geoLocationMiddleware from './middleware/geoLocationMiddleware';
 
+
 declare module '@augmentos/sdk' {
   interface TpaSession {
     location?: {
