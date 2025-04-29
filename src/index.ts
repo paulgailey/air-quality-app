@@ -1,4 +1,4 @@
-// src/index.ts v1.4.7
+// src/index.ts v1.4.8
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
@@ -29,7 +29,7 @@ const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 
-const APP_VERSION = '1.4.7';
+const APP_VERSION = '1.4.8';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
@@ -126,7 +126,6 @@ class AirQualityApp extends TpaServer {
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`🚀 Session started for ${userId}`);
 
-    // Create handler container object
     const handlers = {
       active: true,
       location: (update: { latitude: number; longitude: number }) => {
@@ -156,17 +155,14 @@ class AirQualityApp extends TpaServer {
       }
     };
 
-    // Set up listeners
     session.events.onLocation(handlers.location);
     session.onTranscriptionForLanguage('en-US', handlers.voice);
 
-    // Proper cleanup using onDisconnected
     session.events.onDisconnected(() => {
       console.log(`🛑 Session disconnected for ${userId}`);
       handlers.active = false;
     });
 
-    // Initial check if location is already available
     if (session.location) {
       await this.handleAirQualityRequest(session);
     }
