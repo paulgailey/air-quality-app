@@ -1,4 +1,4 @@
-// src/index.ts v1.3.5
+// src/index.ts v1.3.6
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
-import geoLocationMiddleware from './middleware/geoLocationMiddleware'; // <-- Import the geolocation middleware
+import geoLocationMiddleware from './middleware/geoLocationMiddleware';
 
 declare module '@augmentos/sdk' {
   interface TpaSession {
@@ -31,7 +31,7 @@ const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 
-const APP_VERSION = '1.3.5';
+const APP_VERSION = '1.3.6';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
@@ -85,7 +85,6 @@ class AirQualityApp extends TpaServer {
   private setupRoutes(): void {
     const app = this.getExpressApp();
 
-    // Geolocation middleware attached here to all routes
     app.use(geoLocationMiddleware);
 
     app.use((req, res, next) => {
@@ -103,12 +102,16 @@ class AirQualityApp extends TpaServer {
         status: "running",
         version: APP_VERSION,
         environment: ENVIRONMENT,
-        endpoints: ['/health', '/tpa_config.json']
+        endpoints: ['/health', '/version', '/tpa_config.json']
       });
     });
 
     app.get('/health', (req, res) => {
       res.json({ status: "healthy" });
+    });
+
+    app.get('/version', (req, res) => {
+      res.json({ version: APP_VERSION });
     });
 
     app.get('/tpa_config.json', (req, res) => {
@@ -159,9 +162,7 @@ class AirQualityApp extends TpaServer {
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
         {
           timeout: 3000,
-          headers: {
-            'Accept-Encoding': 'gzip, deflate'
-          }
+          headers: { 'Accept-Encoding': 'gzip, deflate' }
         }
       );
 
@@ -217,9 +218,7 @@ class AirQualityApp extends TpaServer {
     try {
       const ip = await axios.get('https://ipapi.co/json/', {
         timeout: 2000,
-        headers: {
-          'Accept-Encoding': 'gzip, deflate'
-        }
+        headers: { 'Accept-Encoding': 'gzip, deflate' }
       });
 
       if (ip.data.latitude && ip.data.longitude) {
@@ -232,7 +231,7 @@ class AirQualityApp extends TpaServer {
       console.warn("⚠️ IP geolocation failed:", error);
     }
 
-    console.log('📡 Fallback to default: London');
+    console.log('📡 Fallback to default location: London');
     return { lat: 51.5074, lon: -0.1278 };
   }
 }
