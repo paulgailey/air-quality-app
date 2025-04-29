@@ -1,4 +1,4 @@
-// src/index.ts v1.3.4
+// src/index.ts v1.3.5
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
+import geoLocationMiddleware from './geoLocationMiddleware.js'; // <-- Import the geolocation middleware
 
 declare module '@augmentos/sdk' {
   interface TpaSession {
@@ -30,7 +31,7 @@ const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 
-const APP_VERSION = '1.3.4';
+const APP_VERSION = '1.3.5';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
@@ -83,6 +84,9 @@ class AirQualityApp extends TpaServer {
 
   private setupRoutes(): void {
     const app = this.getExpressApp();
+
+    // Geolocation middleware attached here to all routes
+    app.use(geoLocationMiddleware);
 
     app.use((req, res, next) => {
       this.requestCount++;
