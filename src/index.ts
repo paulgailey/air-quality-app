@@ -1,4 +1,4 @@
-// src/index.ts
+// src/index.ts v1.3.3
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
@@ -8,16 +8,36 @@ import axios from 'axios';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 
+// Extend TpaSession with optional location property
+// and TpaServer with missing initTpaSession declaration
+declare module '@augmentos/sdk' {
+  interface TpaSession {
+    location?: {
+      latitude: number;
+      longitude: number;
+    };
+  }
+
+  interface TpaServer {
+    initTpaSession(params: {
+      sessionId: string;
+      userId: string;
+      packageName: string;
+    }): Promise<void>;
+  }
+}
+
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 
-const APP_VERSION = packageJson.version;
+const APP_VERSION = '1.3.3';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
-const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
-const AQI_TOKEN = process.env.AQI_TOKEN;
+const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
+const AQI_TOKEN = process.env.AQI_TOKEN || '';
 
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   console.error('❌ Missing required environment variables');
@@ -42,7 +62,6 @@ interface AQIStationData {
 }
 
 class AirQualityApp extends TpaServer {
-  private activeSessions = new Map<string, { userId: string; started: Date }>();
   private requestCount = 0;
   private readonly VOICE_COMMANDS = [
     "air quality",
@@ -60,6 +79,7 @@ class AirQualityApp extends TpaServer {
       port: PORT,
       publicDir: path.join(__dirname, '../public')
     });
+
     this.setupRoutes();
   }
 
@@ -85,10 +105,7 @@ class AirQualityApp extends TpaServer {
     });
 
     app.get('/health', (req, res) => {
-      res.json({
-        status: "healthy",
-        sessions: this.activeSessions.size
-      });
+      res.json({ status: "healthy" });
     });
 
     app.get('/tpa_config.json', (req, res) => {
@@ -122,8 +139,6 @@ class AirQualityApp extends TpaServer {
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
-    this.activeSessions.set(sessionId, { userId, started: new Date() });
-
     session.onTranscriptionForLanguage('en-US', (transcript) => {
       const text = transcript.text.toLowerCase();
       console.log(`🎤 Heard: "${text}"`);
