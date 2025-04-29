@@ -8,7 +8,6 @@ import axios from 'axios';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 
-// Extend TpaSession with optional location property
 declare module '@augmentos/sdk' {
   interface TpaSession {
     location?: {
@@ -27,13 +26,16 @@ declare module '@augmentos/sdk' {
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const packageJson = JSON.parse(readFileSync(path.join(__dirname, '../package.json'), 'utf-8'));
+const packageJson = JSON.parse(
+  readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
+);
 
 const APP_VERSION = '1.3.4';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
 const AQI_TOKEN = process.env.AQI_TOKEN || '';
+const ENVIRONMENT = process.env.NODE_ENV || 'production';
 
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   console.error('❌ Missing required environment variables');
@@ -55,7 +57,6 @@ interface AQIStationData {
     name: string;
     geo: [number, number];
   };
-  locationSource: string;
 }
 
 class AirQualityApp extends TpaServer {
@@ -97,6 +98,7 @@ class AirQualityApp extends TpaServer {
       res.json({
         status: "running",
         version: APP_VERSION,
+        environment: ENVIRONMENT,
         endpoints: ['/health', '/tpa_config.json']
       });
     });
@@ -147,24 +149,27 @@ class AirQualityApp extends TpaServer {
     await this.checkAirQuality(session);
   }
 
-  private async getNearestAQIStation(lat: number, lon: number, locationSource: string): Promise<AQIStationData> {
+  private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
     try {
-      const response = await axios.get(`https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`, {
-        timeout: 3000,
-        headers: { 'Accept-Encoding': 'gzip, deflate' }
-      });
+      const response = await axios.get(
+        `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
+        {
+          timeout: 3000,
+          headers: {
+            'Accept-Encoding': 'gzip, deflate'
+          }
+        }
+      );
 
       if (response.data.status !== 'ok') {
         throw new Error('Station data unavailable');
       }
-
       return {
         aqi: response.data.data.aqi,
         station: {
           name: response.data.data.city?.name || 'Nearest AQI station',
           geo: response.data.data.city?.geo || [lat, lon]
-        },
-        locationSource
+        }
       };
     } catch (error) {
       console.error('AQI station fetch failed:', error);
@@ -174,36 +179,19 @@ class AirQualityApp extends TpaServer {
 
   private async checkAirQuality(session: TpaSession): Promise<void> {
     try {
-      let coords, locationSource: string;
+      const coords = session.location
+        ? { lat: session.location.latitude, lon: session.location.longitude }
+        : await this.getApproximateCoords();
 
-      if (session.location) {
-        coords = { lat: session.location.latitude, lon: session.location.longitude };
-        locationSource = '📡 Using device GPS location';
-      } else {
-        try {
-          const ipGeo = await axios.get('https://ipapi.co/json/', {
-            timeout: 2000,
-            headers: { 'Accept-Encoding': 'gzip, deflate' }
-          });
+      console.log(`📍 Using coordinates: ${coords.lat}, ${coords.lon}`);
 
-          if (ipGeo.data.latitude && ipGeo.data.longitude) {
-            coords = { lat: ipGeo.data.latitude, lon: ipGeo.data.longitude };
-            locationSource = '🌐 Using IP-based location';
-          } else {
-            throw new Error();
-          }
-        } catch {
-          coords = { lat: 51.5074, lon: -0.1278 }; // London
-          locationSource = '🌍 Location unknown – using default';
-        }
-      }
-
-      const station = await this.getNearestAQIStation(coords.lat, coords.lon, locationSource);
+      const station = await this.getNearestAQIStation(coords.lat, coords.lon);
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
 
       await session.layouts.showTextWall(
-        `📍 ${station.station.name}\n(${station.locationSource})\n\n` +
-        `AQI: ${station.aqi} – ${quality.label} ${quality.emoji}\n` +
+        `📍 ${station.station.name}\n\n` +
+        `Air Quality: ${quality.label} ${quality.emoji}\n` +
+        `AQI: ${station.aqi}\n\n` +
         `${quality.advice}`,
         { view: ViewType.MAIN, durationMs: 10000 }
       );
@@ -215,8 +203,36 @@ class AirQualityApp extends TpaServer {
       });
     }
   }
+
+  private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
+    if (ENVIRONMENT === 'test') {
+      console.log('📡 Test mode: using hardcoded Murcia fallback location');
+      return { lat: 37.9838, lon: -1.1294 };
+    }
+
+    try {
+      const ip = await axios.get('https://ipapi.co/json/', {
+        timeout: 2000,
+        headers: {
+          'Accept-Encoding': 'gzip, deflate'
+        }
+      });
+
+      if (ip.data.latitude && ip.data.longitude) {
+        console.log(`📡 IP-based location resolved: ${ip.data.city}, ${ip.data.country_name}`);
+        return { lat: ip.data.latitude, lon: ip.data.longitude };
+      } else {
+        console.warn("⚠️ Incomplete IP geolocation data.");
+      }
+    } catch (error) {
+      console.warn("⚠️ IP geolocation failed:", error);
+    }
+
+    console.log('📡 Fallback to default: London');
+    return { lat: 51.5074, lon: -0.1278 };
+  }
 }
 
 new AirQualityApp().getExpressApp().listen(PORT, () => {
-  console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
+  console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT} in ${ENVIRONMENT} mode`);
 });
