@@ -154,8 +154,14 @@ class AirQualityApp extends TpaServer {
     try {
       const response = await axios.get(
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
-        { timeout: 3000 }
+        {
+          timeout: 3000,
+          headers: {
+            'Accept-Encoding': 'gzip, deflate'
+          }
+        }
       );
+      
       if (response.data.status !== 'ok') {
         throw new Error('Station data unavailable');
       }
@@ -199,7 +205,13 @@ class AirQualityApp extends TpaServer {
 
   private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
     try {
-      const ip = await axios.get('https://ipapi.co/json/', { timeout: 2000 });
+      const ip = await axios.get('https://ipapi.co/json/', {
+        timeout: 2000,
+        headers: {
+          'Accept-Encoding': 'gzip, deflate'
+        }
+      });
+      
       if (ip.data.latitude && ip.data.longitude) {
         return { lat: ip.data.latitude, lon: ip.data.longitude };
       }
