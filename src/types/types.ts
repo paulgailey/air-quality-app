@@ -9,7 +9,7 @@ export interface AQILevel {
     aqi: number;
     station: {
       name: string;
-      geo: [number, number]; // Strict tuple type
+      geo: [number, number];
       distance?: number;
     };
   }
@@ -24,31 +24,28 @@ export interface AQILevel {
   ];
   
   export interface LocationUpdate {
-    latitude: number;
-    longitude: number;
+    lat?: number;
+    lon?: number;
+    latitude?: number;
+    longitude?: number;
     accuracy?: number;
     timestamp?: number;
   }
   
   declare module '@augmentos/sdk' {
     interface TpaSession {
+      id: string;
       location?: LocationUpdate;
       lastLocationUpdate?: number;
+      requestLocation?: () => Promise<void>;
     }
   
     interface SessionEvents {
       onLocation(listener: (update: LocationUpdate) => void | Promise<void>): void;
       emit(event: 'location', update: LocationUpdate): void;
     }
-  }
   
-  export interface WAQIResponse {
-    status: string;
-    data: {
-      aqi: number;
-      city: {
-        name: string;
-        geo: [string, string] | null;
-      };
-    };
+    interface TpaServer {
+      use?: (middleware: (req: any, res: any, next: any) => void) => void;
+    }
   }
