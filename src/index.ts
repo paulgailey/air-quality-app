@@ -33,7 +33,7 @@ class AirQualityApp extends TpaServer {
     });
   }
 
-  protected async onSession(session: TpaSession & { location?: LocationUpdate }): Promise<void> {
+  protected async onSession(session: TpaSession): Promise<void> {
     // Location Handler
     session.events.onLocation(async (update: unknown) => {
       try {
@@ -74,8 +74,14 @@ class AirQualityApp extends TpaServer {
           return;
         }
         
-        // Trigger location handler with current location
-        session.events.emit('location', session.location as any);
+        // Type-safe event emission
+        const eventEmitter = session.events as {
+          emit: (event: 'location', update: LocationUpdate) => void
+        };
+        eventEmitter.emit('location', {
+          latitude: session.location.latitude,
+          longitude: session.location.longitude
+        });
       }
     });
   }

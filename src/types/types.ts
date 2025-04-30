@@ -29,3 +29,15 @@ export interface AQILevel {
     accuracy?: number;
     timestamp?: number;
   }
+  
+  declare module '@augmentos/sdk' {
+    interface TpaSession {
+      location?: LocationUpdate;
+      lastLocationUpdate?: number;
+    }
+  
+    interface SessionEvents {
+      onLocation(listener: (update: LocationUpdate) => void | Promise<void>): void;
+      emit(event: 'location', update: LocationUpdate): void;
+    }
+  }
