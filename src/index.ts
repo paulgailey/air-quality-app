@@ -1,4 +1,4 @@
-// src/index.ts v1.5.3
+// src/index.ts v1.5.4
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
@@ -8,7 +8,7 @@ import axios from 'axios';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 
-// Type Augmentations
+// Enhanced Type Augmentations
 declare module '@augmentos/sdk' {
   interface TpaSession {
     location?: {
@@ -16,6 +16,7 @@ declare module '@augmentos/sdk' {
       longitude: number;
     };
     lastLocationUpdate?: number;
+    isWaitingForLocation?: boolean;
   }
 
   interface LocationUpdate {
@@ -31,7 +32,7 @@ const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 
-const APP_VERSION = '1.5.3';
+const APP_VERSION = '1.5.4';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
@@ -97,23 +98,6 @@ class AirQualityApp extends TpaServer {
 
     app.use(express.json());
 
-    app.get('/', (req, res) => {
-      res.json({
-        status: "running",
-        version: APP_VERSION,
-        environment: ENVIRONMENT,
-        endpoints: ['/health', '/version', '/tpa_config.json']
-      });
-    });
-
-    app.get('/health', (req, res) => {
-      res.json({ status: "healthy" });
-    });
-
-    app.get('/version', (req, res) => {
-      res.json({ version: APP_VERSION });
-    });
-
     app.get('/tpa_config.json', (req, res) => {
       res.json({
         voiceCommands: this.VOICE_COMMANDS.map(phrase => ({
@@ -130,17 +114,27 @@ class AirQualityApp extends TpaServer {
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`🚀 Session started for ${userId}`);
+    console.log('Initial session location:', session.location);
+
+    // Show listening state immediately
     await this.showListeningState(session);
 
-    const locationHandler = (update: { latitude: number; longitude: number }) => {
-      console.log(`📍 Location update: ${update.latitude}, ${update.longitude}`);
-      session.location = {
-        latitude: update.latitude,
-        longitude: update.longitude
-      };
-      session.lastLocationUpdate = Date.now();
+    // Enhanced location handler
+    const locationHandler = (update: { latitude?: number; longitude?: number }) => {
+      if (this.isValidLocationUpdate(update)) {
+        console.log(`📍 Valid location: ${update.latitude}, ${update.longitude}`);
+        session.location = {
+          latitude: update.latitude as number,
+          longitude: update.longitude as number
+        };
+        session.lastLocationUpdate = Date.now();
+        session.isWaitingForLocation = false;
+      } else {
+        console.error('⚠️ Invalid location update:', update);
+      }
     };
 
+    // Voice command handler
     const voiceHandler = async (transcript: { text: string }) => {
       const text = transcript.text.toLowerCase();
       if (!this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) return;
@@ -150,12 +144,14 @@ class AirQualityApp extends TpaServer {
       await this.showListeningState(session);
     };
 
+    // Set up listeners
     session.events.onLocation(locationHandler);
     session.onTranscriptionForLanguage('en-US', voiceHandler);
 
-    session.events.onDisconnected(() => {
-      console.log(`🛑 Session ended for ${userId}`);
-    });
+    // Initial location check
+    if (!this.isValidLocation(session.location)) {
+      await this.requestLocationUpdate(session);
+    }
   }
 
   private async processAirQualityRequest(session: TpaSession): Promise<void> {
@@ -163,20 +159,61 @@ class AirQualityApp extends TpaServer {
     await this.showProcessingState(session);
 
     try {
-      if (!session.location || !session.lastLocationUpdate || 
-          Date.now() - session.lastLocationUpdate > LOCATION_TIMEOUT_MS) {
-        throw new Error('Location not available or outdated');
+      // 1. Ensure we have valid location
+      if (!this.isValidLocation(session.location)) {
+        await this.requestLocationUpdate(session);
       }
 
-      const { latitude, longitude } = session.location;
+      // 2. Verify location again after potential update
+      if (!this.isValidLocation(session.location)) {
+        throw new Error('Cannot determine your current location');
+      }
+
+      // 3. Get air quality data
+      const { latitude, longitude } = session.location!;
       const station = await this.getNearestAQIStation(latitude, longitude);
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
 
+      // 4. Display results
       await this.showAirQualityResult(session, station, quality, startTime);
     } catch (error) {
       console.error('Air quality check failed:', error);
-      await this.showErrorState(session, startTime);
+      await this.showErrorState(session, error instanceof Error ? error.message : 'Unknown error');
     }
+  }
+
+  private async requestLocationUpdate(session: TpaSession): Promise<void> {
+    session.isWaitingForLocation = true;
+    await session.layouts.showTextWall(
+      "📍 Finding your location...",
+      { view: ViewType.MAIN, durationMs: 2000 }
+    );
+
+    const waitStart = Date.now();
+    while (session.isWaitingForLocation && 
+           (Date.now() - waitStart) < LOCATION_TIMEOUT_MS) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    if (!this.isValidLocation(session.location)) {
+      throw new Error('Location request timed out');
+    }
+  }
+
+  private isValidLocationUpdate(update: any): boolean {
+    return update && 
+           typeof update.latitude === 'number' && 
+           typeof update.longitude === 'number' &&
+           Math.abs(update.latitude) <= 90 &&
+           Math.abs(update.longitude) <= 180 &&
+           !(update.latitude === 0 && update.longitude === 0);
+  }
+
+  private isValidLocation(location?: { latitude: number; longitude: number }): boolean {
+    return !!location && 
+           Math.abs(location.latitude) <= 90 &&
+           Math.abs(location.longitude) <= 180 &&
+           !(location.latitude === 0 && location.longitude === 0);
   }
 
   private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
@@ -190,7 +227,7 @@ class AirQualityApp extends TpaServer {
       );
 
       if (response.data.status !== 'ok') {
-        throw new Error('Invalid AQI API response');
+        throw new Error(response.data.data || 'AQI API error');
       }
 
       const distance = this.calculateDistance(
@@ -226,14 +263,14 @@ class AirQualityApp extends TpaServer {
 
   private async showListeningState(session: TpaSession): Promise<void> {
     await session.layouts.showTextWall(
-      "👂 Say 'air quality'",
+      "👂 Say 'air quality' for current conditions",
       { view: ViewType.MAIN, durationMs: LISTENING_DURATION_MS }
     );
   }
 
   private async showProcessingState(session: TpaSession): Promise<void> {
     await session.layouts.showTextWall(
-      "🔄 Checking your air quality...",
+      "🔄 Checking your location and air quality...",
       { view: ViewType.MAIN, durationMs: 2000 }
     );
   }
@@ -245,7 +282,7 @@ class AirQualityApp extends TpaServer {
     startTime: number
   ): Promise<void> {
     const remainingTime = MAX_RESPONSE_TIME_MS - (Date.now() - startTime);
-    const displayTime = Math.max(remainingTime, 3000);
+    const displayTime = Math.max(remainingTime, 4000);
 
     await session.layouts.showTextWall(
       `📍 ${station.station.name} (${station.station.distance.toFixed(1)}km)\n\n` +
@@ -256,13 +293,10 @@ class AirQualityApp extends TpaServer {
     );
   }
 
-  private async showErrorState(session: TpaSession, startTime: number): Promise<void> {
-    const remainingTime = MAX_RESPONSE_TIME_MS - (Date.now() - startTime);
-    const displayTime = Math.max(remainingTime, 3000);
-
+  private async showErrorState(session: TpaSession, message: string): Promise<void> {
     await session.layouts.showTextWall(
-      "⚠️ Couldn't get air quality data. Please try again.",
-      { view: ViewType.MAIN, durationMs: displayTime }
+      `⚠️ ${message}\n\nPlease try again later.`,
+      { view: ViewType.MAIN, durationMs: 4000 }
     );
   }
 }
