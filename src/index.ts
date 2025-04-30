@@ -1,35 +1,42 @@
-import { AQI_LEVELS } from './types/types';  // Import AQI levels from types.ts
-import { AirQualityService } from './services/airQualityService';  // Import air quality service for fetching data
+// Import necessary modules
+import { AQI_LEVELS } from './types/types'; // Ensure the path to types.ts is correct
+import { getAirQuality } from './services/airQualityService'; // Ensure this points to the correct service
 
-const airQualityService = new AirQualityService();
+// Define the AQILevel type if needed
+type AQILevel = {
+  max: number;
+  label: string;
+  emoji: string;
+  advice: string;
+};
 
-// This function gets the air quality based on the coordinates and displays it
-async function getAirQualityAndDisplay(coords: { lat: number, lon: number }) {
-  try {
-    // Fetch the nearest AQI station data based on the coordinates
-    const station = await airQualityService.getNearestAQIStation(coords.lat, coords.lon);
+// Initialize tpaSession (ensure this is available in your environment)
+declare const tpaSession: any; // Ensure tpaSession is correctly imported or available in the environment
 
-    // Find the appropriate air quality level based on the AQI value
-    const quality = AQI_LEVELS.find(level => station.aqi <= level.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
+// This function gets the air quality based on the user's location
+async function getAirQualityBasedOnLocation() {
+  // Retrieve location using tpaSession (ensure this works with your setup)
+  tpaSession.events.onLocation(async (coords: { lat: number; lon: number }) => {
+    console.log(`📍 Using coordinates: ${coords.lat}, ${coords.lon}`);
 
-    // Show the air quality information using TeamOS's showTextWall method
-    await session.layouts.showTextWall(
+    // Get the nearest AQI station based on the user's coordinates
+    const station = await getAirQuality(coords.lat, coords.lon);
+
+    // Find the appropriate AQI level based on the station's AQI value
+    const quality = AQI_LEVELS.find((l: AQILevel) => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
+
+    // Display the air quality information
+    await tpaSession.layouts.showTextWall(
       `📍 ${station.station.name}\n\n` +
       `Air Quality: ${quality.label} ${quality.emoji}\n` +
       `AQI: ${station.aqi}\n\n` +
       `${quality.advice}`,
-      { view: ViewType.MAIN, durationMs: 10000 }
+      { view: 'MAIN', durationMs: 10000 }
     );
-
-  } catch (error) {
-    console.error("Error fetching air quality data:", error);
-  }
+  });
 }
 
-// Set up the location listener using TeamOS's recommended method
-tpaSession.events.onLocation(async (coords) => {
-  console.log(`📍 Using coordinates: ${coords.lat}, ${coords.lon}`);
-  
-  // Call the function to fetch and display air quality
-  await getAirQualityAndDisplay(coords);
+// Execute the function to get the air quality based on the user's location
+getAirQualityBasedOnLocation().catch((error) => {
+  console.error('Error getting air quality data:', error);
 });
