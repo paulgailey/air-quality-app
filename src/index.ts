@@ -1,42 +1,84 @@
-// Import necessary modules
-import { AQI_LEVELS } from './types/types'; // Ensure the path to types.ts is correct
-import { getAirQuality } from './services/airQualityService'; // Ensure this points to the correct service
+import 'dotenv/config';
+import path from 'path';
+import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
+import { fileURLToPath } from 'url';
+import { AQI_LEVELS, LocationUpdate } from './types/types';
+import { getNearestAQIStation } from './services/airQualityService';
 
-// Define the AQILevel type if needed
-type AQILevel = {
-  max: number;
-  label: string;
-  emoji: string;
-  advice: string;
-};
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || '';
+const AQI_TOKEN = process.env.AQI_TOKEN || '';
 
-// Initialize tpaSession (ensure this is available in your environment)
-declare const tpaSession: any; // Ensure tpaSession is correctly imported or available in the environment
-
-// This function gets the air quality based on the user's location
-async function getAirQualityBasedOnLocation() {
-  // Retrieve location using tpaSession (ensure this works with your setup)
-  tpaSession.events.onLocation(async (coords: { lat: number; lon: number }) => {
-    console.log(`📍 Using coordinates: ${coords.lat}, ${coords.lon}`);
-
-    // Get the nearest AQI station based on the user's coordinates
-    const station = await getAirQuality(coords.lat, coords.lon);
-
-    // Find the appropriate AQI level based on the station's AQI value
-    const quality = AQI_LEVELS.find((l: AQILevel) => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
-
-    // Display the air quality information
-    await tpaSession.layouts.showTextWall(
-      `📍 ${station.station.name}\n\n` +
-      `Air Quality: ${quality.label} ${quality.emoji}\n` +
-      `AQI: ${station.aqi}\n\n` +
-      `${quality.advice}`,
-      { view: 'MAIN', durationMs: 10000 }
-    );
-  });
+if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
+  console.error('❌ Missing required environment variables');
+  process.exit(1);
 }
 
-// Execute the function to get the air quality based on the user's location
-getAirQualityBasedOnLocation().catch((error) => {
-  console.error('Error getting air quality data:', error);
-});
+class AirQualityApp extends TpaServer {
+  private readonly VOICE_COMMANDS = [
+    "what's the air quality like",
+    "air quality",
+    "how's the air",
+    "pollution level",
+    "is the air safe"
+  ];
+
+  constructor() {
+    super({
+      packageName: 'air-quality-app',
+      apiKey: AUGMENTOS_API_KEY,
+      port: PORT,
+      publicDir: path.join(__dirname, '../public')
+    });
+  }
+
+  protected async onSession(session: TpaSession & { location?: LocationUpdate }): Promise<void> {
+    // Location Handler
+    session.events.onLocation(async (update: unknown) => {
+      try {
+        const location = update as LocationUpdate;
+        if (!location?.latitude || !location?.longitude) {
+          throw new Error('Invalid coordinates received');
+        }
+
+        session.location = location;
+        const station = await getNearestAQIStation(location.latitude, location.longitude);
+        const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
+
+        await session.layouts.showTextWall(
+          `📍 ${station.station.name}\n\n` +
+          `Air Quality: ${quality.label} ${quality.emoji}\n` +
+          `AQI: ${station.aqi}\n\n` +
+          `${quality.advice}`,
+          { view: ViewType.MAIN, durationMs: 10000 }
+        );
+      } catch (error) {
+        console.error('Location processing error:', error);
+        await session.layouts.showTextWall(
+          "⚠️ Couldn't determine air quality. Please try again.",
+          { view: ViewType.MAIN, durationMs: 4000 }
+        );
+      }
+    });
+
+    // Voice Command Handler
+    session.onTranscriptionForLanguage('en-US', async (transcript) => {
+      const text = transcript.text.toLowerCase();
+      if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
+        if (!session.location) {
+          await session.layouts.showTextWall(
+            "📍 Waiting for your location...",
+            { view: ViewType.MAIN, durationMs: 2000 }
+          );
+          return;
+        }
+        
+        // Trigger location handler with current location
+        session.events.emit('location', session.location as any);
+      }
+    });
+  }
+}
+
+new AirQualityApp().start();
