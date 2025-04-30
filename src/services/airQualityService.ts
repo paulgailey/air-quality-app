@@ -12,15 +12,26 @@ export async function getNearestAQIStation(latitude: number, longitude: number):
 
   const data = await response.json();
 
-  if (data.status !== 'ok' || !data.data?.aqi) {
+  if (data.status !== 'ok' || typeof data.data?.aqi !== 'number') {
     throw new Error('Invalid WAQI API response');
+  }
+
+  // Strict type handling for geo coordinates
+  let geo: [number, number];
+  if (Array.isArray(data.data.city?.geo)) {
+    geo = [
+      Number(data.data.city.geo[0]) || latitude,
+      Number(data.data.city.geo[1]) || longitude
+    ];
+  } else {
+    geo = [latitude, longitude];
   }
 
   return {
     aqi: data.data.aqi,
     station: {
       name: data.data.city?.name || 'Unknown Station',
-      geo: [data.data.city?.geo || [latitude, longitude]],
+      geo: geo,
       distance: 0
     }
   };

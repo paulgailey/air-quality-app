@@ -9,7 +9,7 @@ export interface AQILevel {
     aqi: number;
     station: {
       name: string;
-      geo: [number, number];
+      geo: [number, number]; // Strict tuple type
       distance?: number;
     };
   }
@@ -40,4 +40,15 @@ export interface AQILevel {
       onLocation(listener: (update: LocationUpdate) => void | Promise<void>): void;
       emit(event: 'location', update: LocationUpdate): void;
     }
+  }
+  
+  export interface WAQIResponse {
+    status: string;
+    data: {
+      aqi: number;
+      city: {
+        name: string;
+        geo: [string, string] | null;
+      };
+    };
   }
