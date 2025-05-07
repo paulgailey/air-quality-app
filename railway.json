@@ -1,0 +1,8 @@
+﻿{
+  "build": {
+    "builder": "nixpacks",
+    "config": {
+      "startCommand": "bun run start"
+    }
+  }
+}
