@@ -1,0 +1,17 @@
+{
+    "build": {
+      "nixpacksPlan": {
+        "phases": {
+          "setup": {
+            "pkgs": ["bun"]
+          },
+          "build": {
+            "cmds": ["bun install", "bun run build"]
+          },
+          "start": {
+            "cmd": "bun run start"
+          }
+        }
+      }
+    }
+  }
