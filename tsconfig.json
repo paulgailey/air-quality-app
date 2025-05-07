@@ -8,7 +8,8 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "strict": true,
-    "noEmit": true, // You can change this based on your build process
+    "noEmit": false, // Changed to false to emit JS files
+    "outDir": "./dist", // Specify output directory explicitly
     "jsx": "react-jsx",
     "resolveJsonModule": true,
     "baseUrl": "./",
