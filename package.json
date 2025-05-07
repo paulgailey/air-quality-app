@@ -4,8 +4,8 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "bun --hot src/index.ts", 
-    "build": "rm -rf dist && bun build", 
+    "dev": "bun --hot src/index.ts",
+    "build": "rm -rf dist && tsc --skipLibCheck && node scripts/copy-public.js",
     "start": "bun src/index.ts"
   },
   "dependencies": {
