@@ -1,38 +1,65 @@
-import { AQIStationData } from '../types/types';
+import axios from 'axios';
+import { AQIStation } from '../types/types.js';
 
-const WAQI_API_KEY = process.env.AQI_TOKEN || '';
-const WAQI_API_URL = 'https://api.waqi.info/feed/geo:';
-
-export async function getNearestAQIStation(latitude: number, longitude: number): Promise<AQIStationData> {
-  if (!WAQI_API_KEY) throw new Error('WAQI API token not configured');
-
-  const response = await fetch(`${WAQI_API_URL}${latitude};${longitude}/?token=${WAQI_API_KEY}`);
-  
-  if (!response.ok) throw new Error(`WAQI API error: ${response.statusText}`);
-
-  const data = await response.json();
-
-  if (data.status !== 'ok' || typeof data.data?.aqi !== 'number') {
-    throw new Error('Invalid WAQI API response');
-  }
-
-  // Strict type handling for geo coordinates
-  let geo: [number, number];
-  if (Array.isArray(data.data.city?.geo)) {
-    geo = [
-      Number(data.data.city.geo[0]) || latitude,
-      Number(data.data.city.geo[1]) || longitude
-    ];
-  } else {
-    geo = [latitude, longitude];
-  }
-
-  return {
-    aqi: data.data.aqi,
-    station: {
-      name: data.data.city?.name || 'Unknown Station',
-      geo: geo,
-      distance: 0
-    }
+interface AQIAPIResponse {
+  status: 'ok' | 'error';
+  data: {
+    aqi: number;
+    city?: {
+      name: string;
+      geo: [number, number];
+    };
+    message?: string; // Ensure this property exists in the interface
   };
+}
+
+export async function getNearestAQIStation(
+  lat: number,
+  lon: number,
+  retries = 2
+): Promise<AQIStation> {
+  const AQI_TOKEN = process.env.AQI_TOKEN;
+  if (!AQI_TOKEN) {
+    throw new Error('AQI_TOKEN environment variable is not set');
+  }
+
+  try {
+    const response = await axios.get<AQIAPIResponse>(
+      `https://api.waqi.info/feed/geo:${lat};${lon}/`,
+      {
+        params: { token: AQI_TOKEN },
+        timeout: 5000, // 5 second timeout
+        validateStatus: (status) => status < 500 // Don't throw on 4xx errors
+      }
+    );
+
+    if (!response.data || response.data.status !== 'ok') {
+      throw new Error(response.data.message || 'Invalid AQI API response');
+    }
+
+    if (typeof response.data.data.aqi !== 'number') {
+      throw new Error('Invalid AQI value received');
+    }
+
+    return {
+      aqi: response.data.data.aqi,
+      station: {
+        name: response.data.data.city?.name || `Station at ${lat.toFixed(2)},${lon.toFixed(2)}`,
+        geo: response.data.data.city?.geo || [lat, lon]
+      }
+    };
+  } catch (error) {
+    console.error(`AQI API Error (${retries} retries left):`, error);
+
+    if (retries > 0) {
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+      return getNearestAQIStation(lat, lon, retries - 1);
+    }
+
+    throw new Error(
+      axios.isAxiosError(error)
+        ? `Network error: ${error.message}`
+        : 'Failed to fetch air quality data'
+    );
+  }
 }
