@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import * as dotenv from 'dotenv';
+dotenv.config();
 import path from 'path';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
 import { fileURLToPath } from 'url';
