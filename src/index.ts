@@ -43,8 +43,8 @@ interface TpaServerOptions {
 // Type definitions for EventManager
 // Ensure this matches the original EventManager type in @augmentos/sdk
 interface EventManager {
-  on(event: string, handler: (data: unknown) => void): void;
-  off(event: string, handler: (data: unknown) => void): void;
+  on(event: 'location' | 'transcription', handler: (data: LocationUpdate | { text: string }) => void): void;
+  off(event: 'location' | 'transcription', handler: (data: LocationUpdate | { text: string }) => void): void;
 }
 
 // Type definitions for LayoutManager
@@ -150,7 +150,7 @@ class AirQualityApp extends TpaServer {
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`New session started: ${sessionId} for user ${userId}`);
 
-    session.events.onLocation(async (update: LocationUpdate) => {
+    session.events.on('location', async (update: LocationUpdate) => {
       console.log('Location update received:', update);
       const lat = update.lat ?? update.latitude;
       const lon = update.lon ?? update.longitude;
@@ -168,7 +168,7 @@ class AirQualityApp extends TpaServer {
       }
     });
 
-    session.events.onTranscription(async (transcript: { text: string }) => {
+    session.events.on('transcription', async (transcript: { text: string }) => {
       console.log('Transcription received:', transcript);
       const text = transcript.text.toLowerCase();
       
@@ -237,7 +237,7 @@ class AirQualityApp extends TpaServer {
           }
         };
 
-        session.events.on('location', handler);
+        session.events.on('location', handler as (data: LocationUpdate) => void);
       });
 
       if (session.requestLocation) {
