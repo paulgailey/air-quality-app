@@ -16,7 +16,7 @@ COPY . .
 # Create .env file with default values
 RUN echo "# Default environment variables\nPORT=3000\n" > .env
 
-# Run the build script with skipLibCheck
+# Run the build script
 RUN bun run build
 
 # Verify the build output exists
@@ -26,4 +26,4 @@ RUN ls -la dist/
 EXPOSE 3000
 
 # Start the app from built output
-CMD ["bun", "--bun", "dist/index.js"]
+CMD ["bun", "dist/index.js"]
