@@ -1,16 +1,20 @@
-# Use the official Bun image
-FROM oven/bun:1.1.4
+# Use Bun official image
+FROM oven/bun:1.1
 
+# Set working directory
 WORKDIR /app
 
-# Copy everything
+# Copy all files
 COPY . .
 
-# Install deps
-RUN bun install --frozen-lockfile
+# Install dependencies
+RUN bun install
 
-# Build the app (update script if needed)
+# Run the build script to generate dist/index.js
 RUN bun run build
 
-# Start the app
+# Expose port (optional: if you use 3000 or another)
+EXPOSE 3000
+
+# Start the app from built output
 CMD ["bun", "dist/index.js"]
