@@ -1,6 +1,11 @@
 {
+<<<<<<< Updated upstream
   "name": "air-quality-app",
   "version": "1.5.7",
+=======
+  "name": "air-quality-everywoah.com",
+  "version": "1.2.0",
+>>>>>>> Stashed changes
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
