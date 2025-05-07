@@ -9,8 +9,8 @@ interface AQIAPIResponse {
       name: string;
       geo: [number, number];
     };
-    message?: string; // Ensure this property exists in the interface
   };
+  message?: string; // Moved to root level
 }
 
 export async function getNearestAQIStation(
@@ -28,13 +28,13 @@ export async function getNearestAQIStation(
       `https://api.waqi.info/feed/geo:${lat};${lon}/`,
       {
         params: { token: AQI_TOKEN },
-        timeout: 5000, // 5 second timeout
-        validateStatus: (status) => status < 500 // Don't throw on 4xx errors
+        timeout: 5000,
+        validateStatus: (status) => status < 500
       }
     );
 
     if (!response.data || response.data.status !== 'ok') {
-      throw new Error(response.data.message || 'Invalid AQI API response');
+      throw new Error(response.data?.message || 'Invalid AQI API response');
     }
 
     if (typeof response.data.data.aqi !== 'number') {
@@ -52,7 +52,7 @@ export async function getNearestAQIStation(
     console.error(`AQI API Error (${retries} retries left):`, error);
 
     if (retries > 0) {
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+      await new Promise(resolve => setTimeout(resolve, 1000));
       return getNearestAQIStation(lat, lon, retries - 1);
     }
 

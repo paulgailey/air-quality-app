@@ -1,15 +1,22 @@
 ﻿{
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "rootDir": "./src",
-    "outDir": "./dist",
-    "strict": true,
-    "esModuleInterop": true,
+    "moduleResolution": "Node",
+    "lib": ["ES2020", "DOM"],
+    "allowJs": true,
     "skipLibCheck": true,
-    "types": ["node"],
-    "allowImportingTsExtensions": true
+    "esModuleInterop": true,
+    "strict": true,
+    "noEmit": true, // You can change this based on your build process
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "incremental": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "build"]
 }
