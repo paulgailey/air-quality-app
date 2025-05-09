@@ -26,4 +26,4 @@ RUN ls -la dist/
 EXPOSE 3000
 
 # Start the app from built output
-CMD ["bun", "dist/index.js"]
+CMD ["bun", "dist/index.js", "--hostname=0.0.0.0"]
