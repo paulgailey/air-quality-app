@@ -14,7 +14,7 @@ RUN bun install
 COPY . .
 
 # Create .env file with default values
-RUN echo "# Default environment variables\nPORT=3000\n" > .env
+RUN echo "# Default environment variables\nPORT=3000\nHOST=0.0.0.0\n" > .env
 
 # Run the build script
 RUN bun run build
