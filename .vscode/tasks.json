@@ -5,11 +5,22 @@
       "label": "Start Bun Dev Server",
       "type": "shell",
       "command": "bun run dev",
-      "group": {
-        "kind": "build",
-        "isDefault": true
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": ".",
+            "file": 1,
+            "location": 2,
+            "message": 3
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "📂 Serving static files",
+          "endsPattern": "📂 Serving static files"
+        }
       },
-      "problemMatcher": [],
       "presentation": {
         "echo": true,
         "reveal": "always",
@@ -21,6 +32,7 @@
       "label": "Start ngrok Tunnel",
       "type": "shell",
       "command": "ngrok http 3000 --log=stdout",
+      "isBackground": false,
       "problemMatcher": [],
       "presentation": {
         "echo": true,
@@ -28,6 +40,13 @@
         "focus": false,
         "panel": "new"
       }
+    },
+    {
+      "label": "Start Bun + ngrok",
+      "dependsOn": ["Start Bun Dev Server", "Start ngrok Tunnel"],
+      "dependsOrder": "sequence",
+      "problemMatcher": [],
+      "group": "build"
     }
   ]
 }
