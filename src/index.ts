@@ -1,4 +1,4 @@
-// Version 1.3.4 - Fixed all TypeScript return type errors
+// Version 1.3.5 - Fixed fetch timeout issue and improved TypeScript compatibility
 import * as dotenv from 'dotenv';
 dotenv.config();
 import path from 'path';
@@ -8,7 +8,7 @@ import { AQI_LEVELS, LocationUpdate } from './types/types.js';
 import { getNearestAQIStation } from './services/airQualityService.js';
 import express from 'express';
 import crypto from 'crypto';
-import fetch from 'node-fetch';
+import fetch, { RequestInit } from 'node-fetch';
 
 // Configuration
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -110,7 +110,7 @@ class AirQualityApp extends TpaServer {
     });
 
     app.get('/health', (req, res) => {
-      res.status(200).json({ 
+      res.status(200).json({
         status: "healthy",
         features: {
           location_fallback: ENABLE_LOCATION_FALLBACK,
@@ -132,7 +132,7 @@ class AirQualityApp extends TpaServer {
 
     app.post('/webhook', async (req, res) => {
       try {
-        res.status(200).json({ 
+        res.status(200).json({
           status: "success",
           message: "Webhook received",
           timestamp: new Date().toISOString()
@@ -145,7 +145,7 @@ class AirQualityApp extends TpaServer {
     app.get('/', (req, res) => {
       res.json({
         status: "running",
-        version: "1.3.4",
+        version: "1.3.5",
         endpoints: ['/health', '/tpa_config.json']
       });
     });
@@ -260,20 +260,30 @@ class AirQualityApp extends TpaServer {
   }
 
   private async getIPBasedLocation(): Promise<{ lat: number; lon: number }> {
-    const response = await fetch('https://ipapi.co/json/', {
-      headers: { 'User-Agent': 'AirQualityApp/1.3.4' },
-      timeout: 2000
-    } as any);
+    const options: RequestInit = {
+      headers: { 'User-Agent': 'AirQualityApp/1.3.5' }
+    };
 
-    if (!response.ok) {
-      throw new Error(`IP geolocation failed: ${response.status}`);
-    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    try {
+      const response = await fetch('https://ipapi.co/json/', {
+        ...options,
+        signal: controller.signal
+      });
 
-    const data = await response.json() as { latitude: number; longitude: number };
-    if (data.latitude && data.longitude) {
-      return { lat: data.latitude, lon: data.longitude };
+      if (!response.ok) {
+        throw new Error(`IP geolocation failed: ${response.status}`);
+      }
+
+      const data = await response.json() as { latitude: number; longitude: number };
+      if (data.latitude && data.longitude) {
+        return { lat: data.latitude, lon: data.longitude };
+      }
+      throw new Error('No location data in IP response');
+    } finally {
+      clearTimeout(timeout);
     }
-    throw new Error('No location data in IP response');
   }
 
   private async handleLocationUpdate(
@@ -306,22 +316,10 @@ const airQualityApp = new AirQualityApp();
 
 // Shutdown handlers
 const handleShutdown = async (signal: string) => {
-  console.log(`Received ${signal}, shutting down...`);
-  try {
-    await airQualityApp.shutdown();
-    process.exit(0);
-  } catch (err) {
-    console.error('Shutdown failed:', err);
-    process.exit(1);
-  }
+  console.log(`Received ${signal}. Shutting down...`);
+  await airQualityApp.shutdown();
+  process.exit(0);
 };
 
-process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 process.on('SIGINT', () => handleShutdown('SIGINT'));
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled rejection at:', promise, 'reason:', reason);
-});
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught exception:', err);
-  handleShutdown('uncaughtException');
-});
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
