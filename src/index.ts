@@ -1,18 +1,20 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
 import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
+import { ParsedQs } from 'qs';
 
 // Configuration
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
-const APP_VERSION = packageJson.version;
+const config = JSON.parse(readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
+const APP_VERSION = "1.3.5";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
 const AQI_TOKEN = process.env.AQI_TOKEN as string;
@@ -41,12 +43,15 @@ interface AQIStationData {
   };
 }
 
-// Extend TpaSession interface to include location
 declare module '@augmentos/sdk' {
   interface TpaSession {
     location?: {
       latitude: number;
       longitude: number;
+    };
+    audio: {
+      play(path: string): Promise<void>;
+      speak(text: string, options?: { language?: string }): Promise<void>;
     };
   }
 }
@@ -65,7 +70,7 @@ class AirQualityApp extends TpaServer {
 
   constructor() {
     super({
-      packageName: "air-quality-app", // Hardcoded to match Augmentos configuration
+      packageName: "air-quality-app",
       apiKey: AUGMENTOS_API_KEY,
       port: PORT,
       publicDir: path.join(__dirname, '../public'),
@@ -76,22 +81,29 @@ class AirQualityApp extends TpaServer {
   private setupRoutes(): void {
     const app = this.getExpressApp();
 
-    // Ngrok header middleware (must be first)
-    app.use((req, res, next) => {
+    // Fixed favicon route with proper typing
+    app.get('/favicon.ico', (req: Request<{}, any, any, ParsedQs, Record<string, any>>, res: Response<any, Record<string, any>>) => {
+      res.status(204).end();
+    });
+
+    // Middleware
+    app.use((req: Request, res: Response, next: NextFunction) => {
       res.setHeader('ngrok-skip-browser-warning', 'true');
       next();
     });
 
-    app.use((req, res, next) => {
+    app.use((req: Request, res: Response, next: NextFunction) => {
       this.requestCount++;
       const requestId = crypto.randomUUID();
       res.set('X-Request-ID', requestId);
       console.log(`[${new Date().toISOString()}] REQ#${this.requestCount} ${req.method} ${req.path}`);
       next();
     });
+
     app.use(express.json());
 
-    app.get('/', (req, res) => {
+    // Routes
+    app.get('/', (req: Request, res: Response) => {
       res.json({
         status: "running",
         version: APP_VERSION,
@@ -99,14 +111,14 @@ class AirQualityApp extends TpaServer {
       });
     });
 
-    app.get('/health', (req, res) => {
+    app.get('/health', (req: Request, res: Response) => {
       res.json({
         status: "healthy",
         sessions: this._activeSessions.size
       });
     });
 
-    app.get('/tpa_config.json', (req, res) => {
+    app.get('/tpa_config.json', (req: Request, res: Response) => {
       res.json({
         voiceCommands: this.VOICE_COMMANDS.map(phrase => ({
           phrase,
@@ -117,7 +129,7 @@ class AirQualityApp extends TpaServer {
       });
     });
 
-    app.post('/webhook', async (req, res) => {
+    app.post('/webhook', async (req: Request, res: Response) => {
       if (req.body?.type === 'session_request') {
         try {
           await this.handleNewSession(req.body.sessionId, req.body.userId);
@@ -188,6 +200,15 @@ class AirQualityApp extends TpaServer {
         `${quality.advice}`,
         { view: ViewType.MAIN, durationMs: 10000 }
       );
+
+      const aqiLevel = quality.label.toLowerCase().split(' ')[0];
+      try {
+        await session.audio.play(`/audio/blip/${aqiLevel}.mp3`)
+          .catch(() => session.audio.play('/audio/blip/default.mp3'));
+      } catch (error) {
+        console.error("Audio playback failed:", error);
+      }
+
     } catch (error) {
       console.error("Check failed:", error);
       await session.layouts.showTextWall("Air quality unavailable", { 
@@ -204,9 +225,9 @@ class AirQualityApp extends TpaServer {
         return { lat: ip.data.latitude, lon: ip.data.longitude };
       }
     } catch (error) {
-      console.warn("IP geolocation failed:", error);
+      console.warn("IP geolocation failed - using config default:", error);
     }
-    return { lat: 51.5074, lon: -0.1278 }; // London fallback
+    return config.defaultLocation;
   }
 }
 
