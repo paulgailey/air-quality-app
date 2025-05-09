@@ -27,5 +27,5 @@ export interface AQIStation {
     name: string;
     geo: [number, number];
   };
-  getLatestAQI(): number; // Added the method for AQIStation to fetch the latest AQI value
+  getLatestAQI: () => number;
 }

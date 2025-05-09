@@ -1,4 +1,4 @@
-import axios, { AxiosError, isAxiosError } from 'axios';
+import axios, { isAxiosError } from 'axios';
 import { AQIStation } from '../types/types.js';
 
 interface AQIAPIResponse {
@@ -37,31 +37,29 @@ export async function getNearestAQIStation(
       throw new Error(response.data?.message || 'Invalid AQI API response');
     }
 
-    if (typeof response.data.data.aqi !== 'number') {
-      throw new Error('Invalid AQI value received');
-    }
+    const aqi = response.data.data.aqi;
+    const name = response.data.data.city?.name || `Station at ${lat.toFixed(2)},${lon.toFixed(2)}`;
+    const geo = response.data.data.city?.geo || [lat, lon];
 
     return {
-      aqi: response.data.data.aqi,
-      station: {
-        name: response.data.data.city?.name || `Station at ${lat.toFixed(2)},${lon.toFixed(2)}`,
-        geo: response.data.data.city?.geo || [lat, lon]
-      }
+      aqi,
+      station: { name, geo },
+      getLatestAQI: () => aqi
     };
   } catch (error: unknown) {
     console.error(`AQI API Error (${retries} retries left):`, error instanceof Error ? error.message : error);
 
     if (retries > 0) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return getNearestAQIStation(lat, lon, retries - 1);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return getNearestAQIStation(lat, lon, retries - 1);
     }
 
-    if (isAxiosError(error)) {  // Use the imported function
-        throw new Error(`Network error: ${error.message}`);
+    if (isAxiosError(error)) {
+      throw new Error(`Network error: ${error.message}`);
     }
     if (error instanceof Error) {
-        throw error;
+      throw error;
     }
     throw new Error('Unknown error occurred while fetching air quality data');
-}
+  }
 }
