@@ -3,9 +3,11 @@
 import axios from "axios";
 import { Request, Response, NextFunction } from "express";
 
-interface Location {
+// Add proper type for the API response
+interface GeoLocationResponse {
+  status: string;
   city?: string;
-  region?: string;
+  regionName?: string;
   country?: string;
   lat?: number;
   lon?: number;
@@ -31,10 +33,9 @@ const geoLocationMiddleware = async (
       return next();
     }
 
-    const response = await axios.get(`http://ip-api.com/json/${ip}`);
-    if (response.data.status === "success") {
-      const { city, regionName: region, country, lat, lon } = response.data;
-      req.location = { city, region, country, lat, lon };
+    const response = await axios.get<GeoLocationResponse>('http://ip-api.com/json/');
+if (response.data.status === "success") {
+  const { city, regionName: region, country, lat, lon } = response.data;
     }
   } catch (error) {
     console.error("Geolocation middleware error:", error);

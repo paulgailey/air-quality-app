@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError, isAxiosError } from 'axios';
 import { AQIStation } from '../types/types.js';
 
 interface AQIAPIResponse {
@@ -10,7 +10,7 @@ interface AQIAPIResponse {
       geo: [number, number];
     };
   };
-  message?: string; // Moved to root level
+  message?: string;
 }
 
 export async function getNearestAQIStation(
@@ -29,7 +29,7 @@ export async function getNearestAQIStation(
       {
         params: { token: AQI_TOKEN },
         timeout: 5000,
-        validateStatus: (status) => status < 500
+        validateStatus: (status: number) => status < 500
       }
     );
 
@@ -48,18 +48,20 @@ export async function getNearestAQIStation(
         geo: response.data.data.city?.geo || [lat, lon]
       }
     };
-  } catch (error) {
-    console.error(`AQI API Error (${retries} retries left):`, error);
+  } catch (error: unknown) {
+    console.error(`AQI API Error (${retries} retries left):`, error instanceof Error ? error.message : error);
 
     if (retries > 0) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      return getNearestAQIStation(lat, lon, retries - 1);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return getNearestAQIStation(lat, lon, retries - 1);
     }
 
-    throw new Error(
-      axios.isAxiosError(error)
-        ? `Network error: ${error.message}`
-        : 'Failed to fetch air quality data'
-    );
-  }
+    if (isAxiosError(error)) {  // Use the imported function
+        throw new Error(`Network error: ${error.message}`);
+    }
+    if (error instanceof Error) {
+        throw error;
+    }
+    throw new Error('Unknown error occurred while fetching air quality data');
+}
 }

@@ -1,23 +1,14 @@
 ﻿{
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "Node",
-    "lib": ["ES2020", "DOM"],
-    "allowJs": true,
-    "skipLibCheck": true,
+    "target": "ES2022",                            // More up-to-date than ES2020
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,     // Prevents casing issues on CI
     "strict": true,
-    "noEmit": false, // Changed to false to emit JS files
-    "outDir": "./dist", // Specify output directory explicitly
-    "jsx": "react-jsx",
-    "resolveJsonModule": true,
-    "baseUrl": "./",
-    "paths": {
-      "@/*": ["src/*"]
-    },
-    "incremental": true
+    "skipLibCheck": true,                          // Speeds up build by skipping `.d.ts` checks
+    "outDir": "dist",                              // Matches your build output path
+    "rootDir": "src"                               // Ensures src layout is preserved
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "exclude": ["node_modules", "dist", "build"]
+  "include": ["src"]
 }

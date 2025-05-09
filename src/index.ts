@@ -1,4 +1,4 @@
-// Version 1.1 - Enhanced location handling with fallbacks
+// Version 1.3.2 - Fixed TypeScript compatibility with Augmentos SDK
 import * as dotenv from 'dotenv';
 dotenv.config();
 import path from 'path';
@@ -32,27 +32,7 @@ console.log('Environment check:', {
   DEFAULT_LOCATION: `${DEFAULT_LAT},${DEFAULT_LON}`
 });
 
-// Interface for TpaServerOptions
-interface TpaServerOptions {
-  packageName: string;
-  apiKey: string;
-  port: number;
-  publicDir: string;
-}
-
-// Type definitions for EventManager
-// Ensure this matches the original EventManager type in @augmentos/sdk
-interface EventManager {
-  on(event: 'location' | 'transcription', handler: (data: LocationUpdate | { text: string }) => void): void;
-  off(event: 'location' | 'transcription', handler: (data: LocationUpdate | { text: string }) => void): void;
-}
-
-// Type definitions for LayoutManager
-interface LayoutManager {
-  showTextWall(text: string, options: { view: ViewType; durationMs: number }): Promise<void>;
-}
-
-// Type extensions
+// Type definitions for TpaSession extensions
 declare module '@augmentos/sdk' {
   interface TpaServer {
     getExpressApp(): express.Application;
@@ -68,7 +48,6 @@ declare module '@augmentos/sdk' {
     requestLocation(): Promise<void>;
     getLastKnownLocation(): Promise<{ lat: number; lon: number } | null>;
     hasLocationPermission(): Promise<boolean>;
-    // Removed duplicate declaration of 'events'
   }
 }
 
@@ -83,13 +62,12 @@ class AirQualityApp extends TpaServer {
   private requestCount = 0;
 
   constructor() {
-    const options: TpaServerOptions = {
+    super({
       packageName: PACKAGE_NAME,
       apiKey: AUGMENTOS_API_KEY,
       port: PORT,
       publicDir: path.join(__dirname, 'public')
-    };
-    super(options);
+    });
 
     this.setupRoutes();
     console.log(`Starting AirQualityApp on port ${PORT}`);
@@ -97,7 +75,7 @@ class AirQualityApp extends TpaServer {
 
   private setupRoutes(): void {
     const app = this.getExpressApp();
-    
+
     app.use(express.json());
     app.use((req, res, next) => {
       this.requestCount++;
@@ -115,7 +93,7 @@ class AirQualityApp extends TpaServer {
     app.get('/', (req, res) => {
       res.json({
         status: "running",
-        version: "1.1.0",
+        version: "1.3.2",
         endpoints: ['/health', '/tpa_config.json']
       });
     });
@@ -140,20 +118,29 @@ class AirQualityApp extends TpaServer {
         transcriptionLanguages: ["en-US"]
       });
     });
-    
+
     app.post('/webhook-debug', express.json(), (req, res) => {
       console.log('Debug webhook received:', req.body);
       res.json({ received: true, body: req.body });
     });
   }
 
-  protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
+  protected async onSession(session: TpaSession & {
+    events: {
+      on(event: string, handler: (data: any) => void): void;
+      off?(event: string, handler: (data: any) => void): void;
+    };
+    layouts: {
+      showTextWall(text: string, options: { view: ViewType; durationMs: number }): Promise<void>;
+    };
+  }, sessionId: string, userId: string): Promise<void> {
     console.log(`New session started: ${sessionId} for user ${userId}`);
 
-    session.events.on('location', async (update: LocationUpdate) => {
-      console.log('Location update received:', update);
-      const lat = update.lat ?? update.latitude;
-      const lon = update.lon ?? update.longitude;
+    const locationHandler = async (update: any) => {
+      const locationUpdate = update as LocationUpdate;
+      console.log('Location update received:', locationUpdate);
+      const lat = locationUpdate.lat ?? locationUpdate.latitude;
+      const lon = locationUpdate.lon ?? locationUpdate.longitude;
 
       if (lat && lon) {
         console.log(`Valid location received: ${lat}, ${lon}`);
@@ -164,13 +151,14 @@ class AirQualityApp extends TpaServer {
         };
         await this.handleLocationUpdate(session, lat, lon);
       } else {
-        console.warn('Invalid location data:', update);
+        console.warn('Invalid location data:', locationUpdate);
       }
-    });
+    };
 
-    session.events.on('transcription', async (transcript: { text: string }) => {
-      console.log('Transcription received:', transcript);
-      const text = transcript.text.toLowerCase();
+    const transcriptionHandler = async (transcript: any) => {
+      const textData = transcript as { text: string };
+      console.log('Transcription received:', textData);
+      const text = textData.text.toLowerCase();
       
       if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd))) {
         console.log('Voice command matched:', text);
@@ -185,18 +173,24 @@ class AirQualityApp extends TpaServer {
           );
         }
       }
-    });
+    };
+
+    session.events.on('location', locationHandler);
+    session.events.on('transcription', transcriptionHandler);
   }
 
-  private async getLocationWithFallback(session: TpaSession): Promise<{ lat: number; lon: number }> {
-    // 1. Try getting last known location
+  private async getLocationWithFallback(session: TpaSession & {
+    events: {
+      on(event: string, handler: (data: any) => void): void;
+      off?(event: string, handler: (data: any) => void): void;
+    };
+  }): Promise<{ lat: number; lon: number }> {
     const lastLocation = await session.getLastKnownLocation();
     if (lastLocation) {
       console.log('Using last known location:', lastLocation);
       return lastLocation;
     }
 
-    // 2. Check for existing session location
     if (session.location) {
       console.log('Using session location:', session.location);
       return {
@@ -205,7 +199,6 @@ class AirQualityApp extends TpaServer {
       };
     }
 
-    // 3. Check permissions
     const hasPermission = await session.hasLocationPermission();
     if (!hasPermission) {
       await session.layouts.showTextWall(
@@ -214,36 +207,43 @@ class AirQualityApp extends TpaServer {
       );
     }
 
-    // 4. Request fresh location with timeout
     try {
       console.log('Requesting fresh location...');
       const locationPromise = new Promise<{ lat: number; lon: number }>((resolve, reject) => {
         const timeoutId = setTimeout(() => {
           reject(new Error('Location request timed out'));
         }, LOCATION_TIMEOUT_MS);
-
-        const handler = (update: unknown) => {
+    
+        const handler = (update: any) => {
           clearTimeout(timeoutId);
-          // Using a type assertion to ensure TypeScript understands this is a valid object
-          const eventManager = session.events as unknown as { off(event: string, handler: Function): void };
-          eventManager.off('location', handler);
+          
+          // Safe event unsubscription
+          try {
+            if (typeof (session.events as any).off === 'function') {
+              (session.events as any).off('location', handler);
+            } else if (typeof (session.events as any).removeListener === 'function') {
+              (session.events as any).removeListener('location', handler);
+            }
+          } catch (e) {
+            console.warn('Failed to remove location event listener:', e);
+          }
+          
           const coords = update as LocationUpdate;
           const lat = coords.lat ?? coords.latitude;
           const lon = coords.lon ?? coords.longitude;
+          
           if (lat && lon) {
             resolve({ lat, lon });
           } else {
             reject(new Error('Invalid location received'));
           }
         };
-
-        session.events.on('location', handler as (data: LocationUpdate) => void);
+    
+        session.events.on('location', handler);
       });
-
-      if (session.requestLocation) {
+    
+      if (typeof session.requestLocation === 'function') {
         await session.requestLocation();
-      } else {
-        throw new Error('requestLocation is not available on the session object');
       }
       return await locationPromise;
     } catch (error) {
@@ -251,7 +251,6 @@ class AirQualityApp extends TpaServer {
       if (!ENABLE_LOCATION_FALLBACK) throw error;
     }
 
-    // 5. Fallback to IP geolocation
     if (ENABLE_LOCATION_FALLBACK) {
       console.log('Attempting IP-based fallback location');
       try {
@@ -263,57 +262,53 @@ class AirQualityApp extends TpaServer {
       }
     }
 
-    // 6. Final fallback to defaults
     console.log(`Using default location: ${DEFAULT_LAT},${DEFAULT_LON}`);
     return { lat: DEFAULT_LAT, lon: DEFAULT_LON };
   }
 
   private async getIPBasedLocation(): Promise<{ lat: number; lon: number }> {
     const options = {
-      headers: { 'User-Agent': 'AirQualityApp/1.1' },
+      headers: { 'User-Agent': 'AirQualityApp/1.3.2' },
       timeout: 2000
     };
-    
-    const response = await fetch('https://ipapi.co/json/', options);
-    
+
+    const response = await fetch('https://ipapi.co/json/', options as any);
+
     if (!response.ok) {
       throw new Error(`IP geolocation failed: ${response.status}`);
     }
-    
-    const data = (await response.json()) as { latitude: number; longitude: number };
+
+    const data = await response.json() as { latitude: number; longitude: number };
     if (data.latitude && data.longitude) {
       return { lat: data.latitude, lon: data.longitude };
     }
     throw new Error('No location data in IP response');
   }
 
-  private async handleLocationUpdate(session: TpaSession, lat: number, lon: number): Promise<void> {
+  private async handleLocationUpdate(session: TpaSession & {
+    layouts: {
+      showTextWall(text: string, options: { view: ViewType; durationMs: number }): Promise<void>;
+    };
+  }, lat: number, lon: number): Promise<void> {
     try {
       console.log(`Processing AQI data for location: ${lat}, ${lon}`);
       const station = await getNearestAQIStation(lat, lon);
       console.log('AQI station data:', station);
-      
+
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
 
       await session.layouts.showTextWall(
-        `📍 ${station.station.name}\n\n` +
-        `Air Quality: ${quality.label} ${quality.emoji}\n` +
-        `AQI: ${station.aqi}\n\n` +
-        `${quality.advice}`,
-        { view: ViewType.MAIN, durationMs: 10000 }
+        `🌫️ Air Quality Index: ${station.aqi} (${quality.label})`,
+        { view: ViewType.MAIN, durationMs: 6000 }
       );
     } catch (error) {
-      console.error('AQI processing error:', error);
+      console.error('Failed to fetch or display AQI data:', error);
       await session.layouts.showTextWall(
-        `⚠️ Couldn't determine air quality: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        { view: ViewType.MAIN, durationMs: 6000 }
+        "❌ Failed to get air quality information.",
+        { view: ViewType.MAIN, durationMs: 5000 }
       );
     }
   }
 }
 
-// Start the server
-const app = new AirQualityApp();
-app.getExpressApp().listen(PORT, () => {
-  console.log(`✅ Server v1.1 running on port ${PORT}`);
-});
+new AirQualityApp();
