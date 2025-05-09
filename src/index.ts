@@ -1,28 +1,29 @@
 import 'dotenv/config';
 import express from 'express';
+import { fileURLToPath } from 'url';
 import path from 'path';
-import { TpaServer, TpaSession, ViewType, StreamType } from '@augmentos/sdk';
+import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
 import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
 
-// Configuration (15 lines)
+// Configuration
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 const APP_VERSION = packageJson.version;
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
-const PACKAGE_NAME = process.env.PACKAGE_NAME || 'com.everywoah.airquality';
-const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
-const AQI_TOKEN = process.env.AQI_TOKEN;
+const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
+const AQI_TOKEN = process.env.AQI_TOKEN as string;
 
-// Validate environment (8 lines)
+// Validate environment
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   console.error('❌ Missing required environment variables');
   process.exit(1);
 }
 
-// AQI Levels (15 lines)
+// AQI Levels
 const AQI_LEVELS = [
   { max: 50, label: "Good", emoji: "😊", advice: "Perfect for outdoor activities!" },
   { max: 100, label: "Moderate", emoji: "😐", advice: "Acceptable air quality" },
@@ -32,7 +33,7 @@ const AQI_LEVELS = [
   { max: Infinity, label: "Hazardous", emoji: "☢️", advice: "Stay indoors with windows closed" }
 ];
 
-interface AQIStationData {  // (7 lines)
+interface AQIStationData {
   aqi: number;
   station: {
     name: string;
@@ -40,10 +41,20 @@ interface AQIStationData {  // (7 lines)
   };
 }
 
-class AirQualityApp extends TpaServer {  // (220 lines total)
-  private activeSessions = new Map<string, { userId: string; started: Date }>();
+// Extend TpaSession interface to include location
+declare module '@augmentos/sdk' {
+  interface TpaSession {
+    location?: {
+      latitude: number;
+      longitude: number;
+    };
+  }
+}
+
+class AirQualityApp extends TpaServer {
+  private _activeSessions = new Map<string, { userId: string; started: Date }>();
   private requestCount = 0;
-  private readonly VOICE_COMMANDS = [  // (8 lines)
+  private readonly VOICE_COMMANDS = [
     "air quality",
     "what's the air like",
     "pollution",
@@ -52,9 +63,9 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     "nearest air quality station"
   ];
 
-  constructor() {  // (7 lines)
+  constructor() {
     super({
-      packageName: PACKAGE_NAME,
+      packageName: "air-quality-app", // Hardcoded to match Augmentos configuration
       apiKey: AUGMENTOS_API_KEY,
       port: PORT,
       publicDir: path.join(__dirname, '../public'),
@@ -62,10 +73,15 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     this.setupRoutes();
   }
 
-  private setupRoutes(): void {  // (60 lines)
+  private setupRoutes(): void {
     const app = this.getExpressApp();
 
-    // Middleware (15 lines)
+    // Ngrok header middleware (must be first)
+    app.use((req, res, next) => {
+      res.setHeader('ngrok-skip-browser-warning', 'true');
+      next();
+    });
+
     app.use((req, res, next) => {
       this.requestCount++;
       const requestId = crypto.randomUUID();
@@ -75,7 +91,6 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     });
     app.use(express.json());
 
-    // Routes (45 lines)
     app.get('/', (req, res) => {
       res.json({
         status: "running",
@@ -87,7 +102,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     app.get('/health', (req, res) => {
       res.json({
         status: "healthy",
-        sessions: this.activeSessions.size
+        sessions: this._activeSessions.size
       });
     });
 
@@ -105,11 +120,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     app.post('/webhook', async (req, res) => {
       if (req.body?.type === 'session_request') {
         try {
-          await this.initTpaSession({
-            sessionId: req.body.sessionId,
-            userId: req.body.userId,
-            packageName: PACKAGE_NAME
-          });
+          await this.handleNewSession(req.body.sessionId, req.body.userId);
           res.json({ status: 'success' });
         } catch (error) {
           console.error('Session init failed:', error);
@@ -121,8 +132,12 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     });
   }
 
-  protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {  // (30 lines)
-    this.activeSessions.set(sessionId, { userId, started: new Date() });
+  private async handleNewSession(sessionId: string, userId: string): Promise<void> {
+    console.log(`Initializing new session: ${sessionId} for user ${userId}`);
+  }
+
+  protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
+    this._activeSessions.set(sessionId, { userId, started: new Date() });
 
     session.onTranscriptionForLanguage('en-US', (transcript) => {
       const text = transcript.text.toLowerCase();
@@ -135,7 +150,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     await this.checkAirQuality(session);
   }
 
-  private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {  // (20 lines)
+  private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
     try {
       const response = await axios.get(
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
@@ -157,9 +172,9 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     }
   }
 
-  private async checkAirQuality(session: TpaSession): Promise<void> {  // (25 lines)
+  private async checkAirQuality(session: TpaSession): Promise<void> {
     try {
-      const coords = session.location?.latitude 
+      const coords = session.location 
         ? { lat: session.location.latitude, lon: session.location.longitude }
         : await this.getApproximateCoords();
       
@@ -182,7 +197,7 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
     }
   }
 
-  private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {  // (15 lines)
+  private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
     try {
       const ip = await axios.get('https://ipapi.co/json/', { timeout: 2000 });
       if (ip.data.latitude && ip.data.longitude) {
@@ -195,7 +210,8 @@ class AirQualityApp extends TpaServer {  // (220 lines total)
   }
 }
 
-// Server Startup (10 lines)
+// Server Startup
 new AirQualityApp().getExpressApp().listen(PORT, () => {
   console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
+  console.log(`Configure ngrok with: ngrok http ${PORT}`);
 });
