@@ -1,14 +1,13 @@
 ﻿{
   "compilerOptions": {
-    "target": "ES2022",                            // More up-to-date than ES2020
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "target": "ESNext",
+    "moduleResolution": "node",
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,     // Prevents casing issues on CI
+    "skipLibCheck": true,
     "strict": true,
-    "skipLibCheck": true,                          // Speeds up build by skipping `.d.ts` checks
-    "outDir": "dist",                              // Matches your build output path
-    "rootDir": "src"                               // Ensures src layout is preserved
+    "resolveJsonModule": true,
+    "allowJs": true
   },
-  "include": ["src"]
+  "include": ["src/**/*.ts"]
 }
