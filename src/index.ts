@@ -1,4 +1,4 @@
-// Version 1.3.2 - Fixed TypeScript compatibility with Augmentos SDK
+// Version 1.3.4 - Fixed all TypeScript return type errors
 import * as dotenv from 'dotenv';
 dotenv.config();
 import path from 'path';
@@ -52,6 +52,7 @@ declare module '@augmentos/sdk' {
 }
 
 class AirQualityApp extends TpaServer {
+  private expressServer?: ReturnType<express.Application['listen']>;
   private readonly VOICE_COMMANDS = [
     "what's the air quality like",
     "air quality",
@@ -69,8 +70,31 @@ class AirQualityApp extends TpaServer {
       publicDir: path.join(__dirname, 'public')
     });
 
+    const expressApp = this.getExpressApp();
+    this.expressServer = expressApp.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    });
+
     this.setupRoutes();
     console.log(`Starting AirQualityApp on port ${PORT}`);
+  }
+
+  public async shutdown(): Promise<void> {
+    if (this.expressServer) {
+      console.log('Initiating graceful shutdown...');
+      return new Promise((resolve, reject) => {
+        this.expressServer?.close((err) => {
+          if (err) {
+            console.error('Shutdown error:', err);
+            reject(err);
+            return;
+          }
+          console.log('Server closed successfully');
+          resolve();
+        });
+      });
+    }
+    return Promise.resolve();
   }
 
   private setupRoutes(): void {
@@ -82,24 +106,11 @@ class AirQualityApp extends TpaServer {
       const requestId = crypto.randomUUID();
       res.set('X-Request-ID', requestId);
       console.log(`[${new Date().toISOString()}] REQ#${this.requestCount} ${req.method} ${req.path}`);
-      
-      if (req.method === 'POST' && req.path === '/webhook') {
-        console.log('Webhook request body:', JSON.stringify(req.body));
-      }
-      
       next();
     });
 
-    app.get('/', (req, res) => {
-      res.json({
-        status: "running",
-        version: "1.3.2",
-        endpoints: ['/health', '/tpa_config.json']
-      });
-    });
-
     app.get('/health', (req, res) => {
-      res.json({ 
+      res.status(200).json({ 
         status: "healthy",
         features: {
           location_fallback: ENABLE_LOCATION_FALLBACK,
@@ -119,9 +130,24 @@ class AirQualityApp extends TpaServer {
       });
     });
 
-    app.post('/webhook-debug', express.json(), (req, res) => {
-      console.log('Debug webhook received:', req.body);
-      res.json({ received: true, body: req.body });
+    app.post('/webhook', async (req, res) => {
+      try {
+        res.status(200).json({ 
+          status: "success",
+          message: "Webhook received",
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(200).json({ status: "error", message: "Webhook processing failed" });
+      }
+    });
+
+    app.get('/', (req, res) => {
+      res.json({
+        status: "running",
+        version: "1.3.4",
+        endpoints: ['/health', '/tpa_config.json']
+      });
     });
   }
 
@@ -138,37 +164,28 @@ class AirQualityApp extends TpaServer {
 
     const locationHandler = async (update: any) => {
       const locationUpdate = update as LocationUpdate;
-      console.log('Location update received:', locationUpdate);
       const lat = locationUpdate.lat ?? locationUpdate.latitude;
       const lon = locationUpdate.lon ?? locationUpdate.longitude;
 
       if (lat && lon) {
-        console.log(`Valid location received: ${lat}, ${lon}`);
         session.location = {
           latitude: lat,
           longitude: lon,
           timestamp: Date.now()
         };
         await this.handleLocationUpdate(session, lat, lon);
-      } else {
-        console.warn('Invalid location data:', locationUpdate);
       }
     };
 
     const transcriptionHandler = async (transcript: any) => {
-      const textData = transcript as { text: string };
-      console.log('Transcription received:', textData);
-      const text = textData.text.toLowerCase();
-      
+      const text = (transcript as { text: string }).text.toLowerCase();
       if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd))) {
-        console.log('Voice command matched:', text);
         try {
           const { lat, lon } = await this.getLocationWithFallback(session);
           await this.handleLocationUpdate(session, lat, lon);
         } catch (error) {
-          console.error('Location handling failed:', error);
           await session.layouts.showTextWall(
-            "⚠️ Couldn't determine your location. Try again later.",
+            "⚠️ Couldn't determine your location",
             { view: ViewType.MAIN, durationMs: 5000 }
           );
         }
@@ -179,20 +196,13 @@ class AirQualityApp extends TpaServer {
     session.events.on('transcription', transcriptionHandler);
   }
 
-  private async getLocationWithFallback(session: TpaSession & {
-    events: {
-      on(event: string, handler: (data: any) => void): void;
-      off?(event: string, handler: (data: any) => void): void;
-    };
-  }): Promise<{ lat: number; lon: number }> {
+  private async getLocationWithFallback(session: TpaSession): Promise<{ lat: number; lon: number }> {
     const lastLocation = await session.getLastKnownLocation();
     if (lastLocation) {
-      console.log('Using last known location:', lastLocation);
       return lastLocation;
     }
 
     if (session.location) {
-      console.log('Using session location:', session.location);
       return {
         lat: session.location.latitude,
         lon: session.location.longitude
@@ -202,77 +212,58 @@ class AirQualityApp extends TpaServer {
     const hasPermission = await session.hasLocationPermission();
     if (!hasPermission) {
       await session.layouts.showTextWall(
-        "📍 Please enable location permissions in settings",
+        "📍 Please enable location permissions",
         { view: ViewType.MAIN, durationMs: 5000 }
       );
     }
 
     try {
-      console.log('Requesting fresh location...');
       const locationPromise = new Promise<{ lat: number; lon: number }>((resolve, reject) => {
         const timeoutId = setTimeout(() => {
           reject(new Error('Location request timed out'));
         }, LOCATION_TIMEOUT_MS);
-    
+
         const handler = (update: any) => {
           clearTimeout(timeoutId);
-          
-          // Safe event unsubscription
-          try {
-            if (typeof (session.events as any).off === 'function') {
-              (session.events as any).off('location', handler);
-            } else if (typeof (session.events as any).removeListener === 'function') {
-              (session.events as any).removeListener('location', handler);
-            }
-          } catch (e) {
-            console.warn('Failed to remove location event listener:', e);
-          }
-          
           const coords = update as LocationUpdate;
           const lat = coords.lat ?? coords.latitude;
           const lon = coords.lon ?? coords.longitude;
-          
           if (lat && lon) {
             resolve({ lat, lon });
           } else {
             reject(new Error('Invalid location received'));
           }
         };
-    
+
         session.events.on('location', handler);
       });
-    
+
       if (typeof session.requestLocation === 'function') {
         await session.requestLocation();
       }
       return await locationPromise;
     } catch (error) {
-      console.error('Location request failed:', error);
-      if (!ENABLE_LOCATION_FALLBACK) throw error;
+      if (!ENABLE_LOCATION_FALLBACK) {
+        throw error;
+      }
     }
 
     if (ENABLE_LOCATION_FALLBACK) {
-      console.log('Attempting IP-based fallback location');
       try {
-        const ipLocation = await this.getIPBasedLocation();
-        console.log('Using IP-based location:', ipLocation);
-        return ipLocation;
+        return await this.getIPBasedLocation();
       } catch (error) {
         console.error('IP geolocation failed:', error);
       }
     }
 
-    console.log(`Using default location: ${DEFAULT_LAT},${DEFAULT_LON}`);
     return { lat: DEFAULT_LAT, lon: DEFAULT_LON };
   }
 
   private async getIPBasedLocation(): Promise<{ lat: number; lon: number }> {
-    const options = {
-      headers: { 'User-Agent': 'AirQualityApp/1.3.2' },
+    const response = await fetch('https://ipapi.co/json/', {
+      headers: { 'User-Agent': 'AirQualityApp/1.3.4' },
       timeout: 2000
-    };
-
-    const response = await fetch('https://ipapi.co/json/', options as any);
+    } as any);
 
     if (!response.ok) {
       throw new Error(`IP geolocation failed: ${response.status}`);
@@ -285,30 +276,52 @@ class AirQualityApp extends TpaServer {
     throw new Error('No location data in IP response');
   }
 
-  private async handleLocationUpdate(session: TpaSession & {
-    layouts: {
-      showTextWall(text: string, options: { view: ViewType; durationMs: number }): Promise<void>;
-    };
-  }, lat: number, lon: number): Promise<void> {
+  private async handleLocationUpdate(
+    session: TpaSession & {
+      layouts: {
+        showTextWall(text: string, options: { view: ViewType; durationMs: number }): Promise<void>;
+      };
+    },
+    lat: number,
+    lon: number
+  ): Promise<void> {
     try {
-      console.log(`Processing AQI data for location: ${lat}, ${lon}`);
       const station = await getNearestAQIStation(lat, lon);
-      console.log('AQI station data:', station);
-
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
-
       await session.layouts.showTextWall(
         `🌫️ Air Quality Index: ${station.aqi} (${quality.label})`,
         { view: ViewType.MAIN, durationMs: 6000 }
       );
     } catch (error) {
-      console.error('Failed to fetch or display AQI data:', error);
       await session.layouts.showTextWall(
-        "❌ Failed to get air quality information.",
+        "❌ Failed to get air quality information",
         { view: ViewType.MAIN, durationMs: 5000 }
       );
     }
   }
 }
 
-new AirQualityApp();
+// App initialization
+const airQualityApp = new AirQualityApp();
+
+// Shutdown handlers
+const handleShutdown = async (signal: string) => {
+  console.log(`Received ${signal}, shutting down...`);
+  try {
+    await airQualityApp.shutdown();
+    process.exit(0);
+  } catch (err) {
+    console.error('Shutdown failed:', err);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled rejection at:', promise, 'reason:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+  handleShutdown('uncaughtException');
+});
