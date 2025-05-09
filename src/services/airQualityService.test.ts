@@ -1,4 +1,5 @@
-import { getNearestAQIStation } from './airQualityService';
+import { getNearestAQIStation } from './airQualityService.js';
+
 
 async function testAQIService() {
   // Test with London coordinates
