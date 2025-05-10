@@ -1,22 +1,23 @@
-// Version 2.0.3 - Fully type-correct production version
+// Version 2.0.5 - Complete production-ready version
 import 'dotenv/config';
-import express, { Request, Response, NextFunction, Application, Express } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
-import axios, { AxiosResponse } from 'axios';
+import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync, existsSync } from 'fs';
 
 // Configuration
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
-const APP_VERSION = "2.0.3";
+const APP_VERSION = "2.0.5";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
-const AQI_TOKEN = process.env.AQI_TOKEN as string;
 
-// Validate environment
+// Validate and assert environment variables
+const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
+const AQI_TOKEN = process.env.AQI_TOKEN;
+
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   console.error('❌ Missing required environment variables');
   process.exit(1);
@@ -69,7 +70,7 @@ declare module '@augmentos/sdk' {
 }
 
 class AirQualityApp extends TpaServer {
-  private _activeSessions = new Map<string, { userId: string; started: Date }>();
+  private sessionTracker = new Map<string, { userId: string; started: Date }>();
   private requestCount = 0;
   private readonly VOICE_COMMANDS = [
     "air quality",
@@ -83,7 +84,7 @@ class AirQualityApp extends TpaServer {
   constructor() {
     super({
       packageName: "air-quality-app",
-      apiKey: AUGMENTOS_API_KEY,
+      apiKey: AUGMENTOS_API_KEY as string,
       port: PORT,
       publicDir: path.join(__dirname, '../public'),
     });
@@ -91,7 +92,7 @@ class AirQualityApp extends TpaServer {
   }
 
   private setupRoutes(): void {
-    const app = this.getExpressApp() as Express;
+    const app = this.getExpressApp();
 
     // Configure proxy trust for Render
     app.set('trust proxy', process.env.TRUST_PROXY ? 1 : false);
@@ -119,18 +120,15 @@ class AirQualityApp extends TpaServer {
       });
     }
 
-    // Favicon handler
     app.get('/favicon.ico', (req: Request, res: Response) => {
       res.status(204).end();
     });
 
-    // Middleware with proper typing
     app.use((req: Request, res: Response, next: NextFunction) => {
       res.setHeader('ngrok-skip-browser-warning', 'true');
       next();
     });
 
-    // Request logging middleware
     app.use((req: Request, res: Response, next: NextFunction) => {
       this.requestCount++;
       const requestId = crypto.randomUUID();
@@ -139,10 +137,8 @@ class AirQualityApp extends TpaServer {
       next();
     });
 
-    // Body parser
     app.use(express.json());
 
-    // Main routes
     app.get('/', (req: Request, res: Response) => {
       res.json({
         status: "running",
@@ -154,7 +150,7 @@ class AirQualityApp extends TpaServer {
     app.get('/health', (req: Request, res: Response) => {
       res.json({
         status: "healthy",
-        sessions: this._activeSessions.size,
+        sessions: this.sessionTracker.size,
         trustProxy: app.get('trust proxy')
       });
     });
@@ -190,7 +186,7 @@ class AirQualityApp extends TpaServer {
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
-    this._activeSessions.set(sessionId, { userId, started: new Date() });
+    this.sessionTracker.set(sessionId, { userId, started: new Date() });
 
     if (session.onLocation) {
       session.onLocation((update: LocationUpdate) => {
@@ -222,7 +218,7 @@ class AirQualityApp extends TpaServer {
 
   private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
     try {
-      const response: AxiosResponse = await axios.get(
+      const response = await axios.get(
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
         { timeout: 3000 }
       );
@@ -299,7 +295,7 @@ class AirQualityApp extends TpaServer {
     }
 
     try {
-      const ipResponse: AxiosResponse = await axios.get('https://ipapi.co/json/', { 
+      const ipResponse = await axios.get('https://ipapi.co/json/', { 
         timeout: 2000,
         headers: {
           "User-Agent": `AirQualityApp/${APP_VERSION} (Render)`
@@ -317,8 +313,7 @@ class AirQualityApp extends TpaServer {
 }
 
 // Server Startup
-const server = new AirQualityApp();
-server.getExpressApp().listen(PORT, () => {
+new AirQualityApp().getExpressApp().listen(PORT, () => {
   console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
   console.log(`Trust proxy setting: ${process.env.TRUST_PROXY ? 'enabled' : 'disabled'}`);
 });
