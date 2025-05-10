@@ -1,6 +1,19 @@
+<<<<<<< Updated upstream
 {
   "defaultLocation": {
     "lat": 37.983843, 
     "lon": -1.129293
   }
 }
+=======
+﻿{
+  "defaultLocation": {
+    "lat": 37.983843,
+    "lon": -1.129293
+  },
+  "audioSettings": {
+    "enabled": true,
+    "fallback": "default.mp3"
+  }
+}
+>>>>>>> Stashed changes
