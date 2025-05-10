@@ -25,7 +25,8 @@ if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   process.exit(1);
 }
 
-// AQI Levels
+// AQI Levels from waqi.info
+// https://aqicn.org/json-api/doc/#/aqicn-api-docs/aqi-levels
 const AQI_LEVELS = [
   { max: 50, label: "Good", emoji: "😊", advice: "Perfect for outdoor activities!" },
   { max: 100, label: "Moderate", emoji: "😐", advice: "Acceptable air quality" },
