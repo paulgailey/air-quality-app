@@ -91,7 +91,19 @@ class AirQualityApp extends TpaServer {
       port: PORT,
       publicDir: path.join(__dirname, '../public'),
     });
+    
+    // Add more detailed logging for debugging
+    console.log(`Initializing Air Quality app v${APP_VERSION}`);
+    console.log(`Package name: air-quality-app`);
+    console.log(`Public directory: ${path.join(__dirname, '../public')}`);
+    console.log(`API key length: ${AUGMENTOS_API_KEY?.length || 0} characters`);
+    
     this.setupRoutes();
+    
+    // Register error handler for uncaught exceptions
+    process.on('uncaughtException', (error) => {
+      console.error('Uncaught exception:', error);
+    });
   }
 
   private setupRoutes(): void {
@@ -145,20 +157,26 @@ class AirQualityApp extends TpaServer {
     app.post('/webhook', async (req: Request, res: Response) => {
       if (req.body?.type === 'session_request') {
         try {
+          console.log(`Received session request for ${req.body.sessionId}`);
           await this.handleNewSession(req.body.sessionId, req.body.userId);
           res.json({ status: 'success' });
         } catch (error) {
           console.error('Session init failed:', error);
-          res.status(500).json({ status: 'error' });
+          res.status(500).json({ status: 'error', message: 'Session initialization failed' });
         }
       } else {
-        res.status(400).json({ status: 'error' });
+        console.log('Unknown webhook request:', req.body);
+        res.status(400).json({ status: 'error', message: 'Invalid webhook request' });
       }
     });
   }
 
   private async handleNewSession(sessionId: string, userId: string): Promise<void> {
     console.log(`Initializing new session: ${sessionId} for user ${userId}`);
+    
+    // The TpaServer will automatically handle session registration when the webhook receives a request
+    // Just log the session info and continue
+    console.log(`Session ${sessionId} initialization complete`);
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
