@@ -1,4 +1,4 @@
-// Version 2.0.4 - Full implementation with LocationUpdate compliance
+// Version 2.0.6 - Full implementation with all type fixes
 import 'dotenv/config';
 import express, { Request, Response, NextFunction, Application } from 'express';
 import { fileURLToPath } from 'url';
@@ -15,7 +15,7 @@ const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 const config = JSON.parse(readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
-const APP_VERSION = "2.0.4";
+const APP_VERSION = "2.0.6";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
 const AQI_TOKEN = process.env.AQI_TOKEN as string;
@@ -65,6 +65,11 @@ declare module '@augmentos/sdk' {
       }) => void
     ) => void;
   }
+}
+
+// Define a type for the specific layout method we need
+interface TextWallLayout {
+  showTextWall(text: string, options: { view: ViewType; durationMs: number }): Promise<void>;
 }
 
 class AirQualityApp extends TpaServer {
@@ -162,9 +167,8 @@ class AirQualityApp extends TpaServer {
     let currentLocation: { lat: number; lon: number } | null = null;
     let locationTimeout: NodeJS.Timeout;
 
-    // Fully compliant LocationUpdate handler
     session.onLocation((update) => {
-      console.log(`📍 Location updated at ${new Date(update.timestamp).toISOString()}`);
+      console.log(`📍 Location updated: ${update.coords.latitude}, ${update.coords.longitude}`);
       currentLocation = {
         lat: update.coords.latitude,
         lon: update.coords.longitude
@@ -174,7 +178,7 @@ class AirQualityApp extends TpaServer {
 
     locationTimeout = setTimeout(async () => {
       if (!currentLocation) {
-        console.warn('Location not received within timeout, using fallback');
+        console.warn('Location not received, falling back to IP geolocation');
         currentLocation = await this.getApproximateCoords();
         await this.checkAirQuality(session, currentLocation);
       }
@@ -201,7 +205,9 @@ class AirQualityApp extends TpaServer {
       const station = await this.getNearestAQIStation(finalCoords.lat, finalCoords.lon);
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
       
-      await session.layouts.showTextWall(
+      // Type assertion to access the showTextWall method
+      const layouts = session.layouts as unknown as TextWallLayout;
+      await layouts.showTextWall(
         `📍 ${station.station.name}\n\n` +
         `Air Quality: ${quality.label} ${quality.emoji}\n` +
         `AQI: ${station.aqi}\n\n` +
@@ -231,7 +237,9 @@ class AirQualityApp extends TpaServer {
       }
     } catch (error) {
       console.error("Check failed:", error);
-      await session.layouts.showTextWall("Air quality unavailable", { 
+      // Type assertion to access the showTextWall method
+      const layouts = session.layouts as unknown as TextWallLayout;
+      await layouts.showTextWall("Air quality unavailable", { 
         view: ViewType.MAIN,
         durationMs: 3000 
       });
