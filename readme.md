@@ -8,6 +8,7 @@
 - Voice command support ("What's the air like?", "Air quality", etc.)
 - Location-based results with fallback to Murcia, Spain
 - Visual and audio feedback (requires compatible AugmentOS hardware)
+- This is a Dev safe version with ngrok. Production deployments fail on Render, Railway, Fly mis-attribute the platforms' CDN for the users geolocation.
 
 ## Installation
 
