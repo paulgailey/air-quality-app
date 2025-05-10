@@ -1,11 +1,11 @@
 import 'dotenv/config';
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction, Application } from 'express';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
 import axios from 'axios';
 import crypto from 'crypto';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { ParsedQs } from 'qs';
 
 // Configuration
@@ -14,8 +14,8 @@ const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 const config = JSON.parse(readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
-const APP_VERSION = "1.3.5";
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
+const APP_VERSION = "1.3.8";
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
 const AQI_TOKEN = process.env.AQI_TOKEN as string;
 
@@ -49,9 +49,9 @@ declare module '@augmentos/sdk' {
       latitude: number;
       longitude: number;
     };
-    audio: {
+    audio?: {
       play(path: string): Promise<void>;
-      speak(text: string, options?: { language?: string }): Promise<void>;
+      speak?(text: string, options?: { language?: string }): Promise<void>;
     };
   }
 }
@@ -79,14 +79,14 @@ class AirQualityApp extends TpaServer {
   }
 
   private setupRoutes(): void {
-    const app = this.getExpressApp();
+    const app = this.getExpressApp() as Application;
 
-    // Fixed favicon route with proper typing
+    // Properly typed favicon handler
     app.get('/favicon.ico', (req: Request<{}, any, any, ParsedQs, Record<string, any>>, res: Response<any, Record<string, any>>) => {
       res.status(204).end();
     });
 
-    // Middleware
+    // Middleware with explicit types
     app.use((req: Request, res: Response, next: NextFunction) => {
       res.setHeader('ngrok-skip-browser-warning', 'true');
       next();
@@ -102,7 +102,7 @@ class AirQualityApp extends TpaServer {
 
     app.use(express.json());
 
-    // Routes
+    // Routes with proper Request/Response types
     app.get('/', (req: Request, res: Response) => {
       res.json({
         status: "running",
@@ -124,7 +124,7 @@ class AirQualityApp extends TpaServer {
           phrase,
           description: "Check air quality"
         })),
-        permissions: ["location"],
+        permissions: ["location", "audio"],
         transcriptionLanguages: ["en-US"]
       });
     });
@@ -201,12 +201,28 @@ class AirQualityApp extends TpaServer {
         { view: ViewType.MAIN, durationMs: 10000 }
       );
 
+      // Robust audio handling
+      const audioBasePath = path.join(__dirname, '../public/audio/blip');
       const aqiLevel = quality.label.toLowerCase().split(' ')[0];
-      try {
-        await session.audio.play(`/audio/blip/${aqiLevel}.mp3`)
-          .catch(() => session.audio.play('/audio/blip/default.mp3'));
-      } catch (error) {
-        console.error("Audio playback failed:", error);
+      const audioFiles = [
+        path.join(audioBasePath, `${aqiLevel}.mp3`),
+        path.join(audioBasePath, 'default.mp3')
+      ];
+
+      if (session.audio?.play) {
+        for (const audioFile of audioFiles) {
+          if (existsSync(audioFile)) {
+            try {
+              await session.audio.play(audioFile);
+              console.log('Played audio:', path.basename(audioFile));
+              break;
+            } catch (audioError) {
+              console.error('Audio playback failed:', audioError);
+            }
+          }
+        }
+      } else {
+        console.warn('Audio API not available in this session');
       }
 
     } catch (error) {
