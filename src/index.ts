@@ -36,6 +36,15 @@ const AQI_LEVELS = [
   { max: Infinity, label: "Hazardous", emoji: "☢️", advice: "Stay indoors with windows closed" }
 ];
 
+// Configuration for TPA SDK
+interface TpaServerConfig {
+  packageName: string;
+  apiKey: string;
+  port: number;
+  publicDir: string;
+  websocketUrl?: string;
+}
+
 interface AQIStationData {
   aqi: number;
   station: {
@@ -89,14 +98,20 @@ class AirQualityApp extends TpaServer {
       packageName: "air-quality-app",
       apiKey: AUGMENTOS_API_KEY,
       port: PORT,
-      publicDir: path.join(__dirname, '../public'),
-    });
+      publicDir: path.join(__dirname, '../public')
+    } as any);
+    
+    // Store websocket URL in environment for webhook handler to use later
+    if (process.env.AUGMENTOS_WEBSOCKET_URL) {
+      console.log(`Using WebSocket URL: ${process.env.AUGMENTOS_WEBSOCKET_URL}`);
+    }
     
     // Add more detailed logging for debugging
     console.log(`Initializing Air Quality app v${APP_VERSION}`);
     console.log(`Package name: air-quality-app`);
     console.log(`Public directory: ${path.join(__dirname, '../public')}`);
     console.log(`API key length: ${AUGMENTOS_API_KEY?.length || 0} characters`);
+    console.log(`WebSocket URL: ${process.env.AUGMENTOS_WEBSOCKET_URL || 'Using default'}`);
     
     this.setupRoutes();
     
@@ -158,6 +173,13 @@ class AirQualityApp extends TpaServer {
       if (req.body?.type === 'session_request') {
         try {
           console.log(`Received session request for ${req.body.sessionId}`);
+          console.log(`WebSocket URL: ${req.body.augmentOSWebsocketUrl || 'Not provided'}`);
+          
+          // Store the websocket URL if provided
+          if (req.body.augmentOSWebsocketUrl) {
+            process.env.AUGMENTOS_WEBSOCKET_URL = req.body.augmentOSWebsocketUrl;
+          }
+          
           await this.handleNewSession(req.body.sessionId, req.body.userId);
           res.json({ status: 'success' });
         } catch (error) {
