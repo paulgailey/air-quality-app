@@ -1,3 +1,4 @@
+// Version 2.0.0 stable dev for ngrok testing, not production verified. Location syntax may need review
 import 'dotenv/config';
 import express, { Request, Response, NextFunction, Application } from 'express';
 import { fileURLToPath } from 'url';
