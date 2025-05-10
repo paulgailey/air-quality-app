@@ -7,7 +7,8 @@
 - Real-time air quality data from [WAQI API](https://waqi.info/)
 - Voice command support ("What's the air like?", "Air quality", etc.)
 - Location-based results with fallback to Murcia, Spain
-- Visual and audio feedback (requires compatible AugmentOS hardware)
+- Visual and audio feedback (requires compatible AugmentOS hardware) UNTESTED in Production
+- Production deployments on Render, Railway, Fly suffering mis-attributed users undetected real geolocation
 
 ## Installation
 
