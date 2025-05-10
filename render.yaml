@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: air-quality-app
+    env: node
+    plan: free
+    buildCommand: bun install && bun run build
+    startCommand: bun run src/index.ts
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+    secrets:
+      - key: AUGMENTOS_API_KEY
+        fromService:
+          name: augmentos-secrets
+          type: secret
+      - key: AQI_TOKEN
+        fromService:
+          name: waqi-secrets
+          type: secret

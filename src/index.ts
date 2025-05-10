@@ -1,21 +1,17 @@
-// Version 2.0.0 stable dev for ngrok testing, not production verified. Location syntax may need review
+// Version 2.0.3 - Fully type-correct production version
 import 'dotenv/config';
-import express, { Request, Response, NextFunction, Application } from 'express';
+import express, { Request, Response, NextFunction, Application, Express } from 'express';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { TpaServer, TpaSession, ViewType } from '@augmentos/sdk';
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 import crypto from 'crypto';
 import { readFileSync, existsSync } from 'fs';
-import { ParsedQs } from 'qs';
 
 // Configuration
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const packageJson = JSON.parse(
-  readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
-);
 const config = JSON.parse(readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
-const APP_VERSION = "1.3.8";
+const APP_VERSION = "2.0.3";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
 const AQI_TOKEN = process.env.AQI_TOKEN as string;
@@ -26,9 +22,15 @@ if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   process.exit(1);
 }
 
-// AQI Levels from waqi.info
-// https://aqicn.org/json-api/doc/#/aqicn-api-docs/aqi-levels
-const AQI_LEVELS = [
+// AQI Levels
+interface AQILevel {
+  max: number;
+  label: string;
+  emoji: string;
+  advice: string;
+}
+
+const AQI_LEVELS: AQILevel[] = [
   { max: 50, label: "Good", emoji: "😊", advice: "Perfect for outdoor activities!" },
   { max: 100, label: "Moderate", emoji: "😐", advice: "Acceptable air quality" },
   { max: 150, label: "Unhealthy for Sensitive Groups", emoji: "😷", advice: "Reduce prolonged exertion" },
@@ -45,6 +47,13 @@ interface AQIStationData {
   };
 }
 
+interface LocationUpdate {
+  coords: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
 declare module '@augmentos/sdk' {
   interface TpaSession {
     location?: {
@@ -55,6 +64,7 @@ declare module '@augmentos/sdk' {
       play(path: string): Promise<void>;
       speak?(text: string, options?: { language?: string }): Promise<void>;
     };
+    onLocation?(callback: (update: LocationUpdate) => void): void;
   }
 }
 
@@ -81,19 +91,46 @@ class AirQualityApp extends TpaServer {
   }
 
   private setupRoutes(): void {
-    const app = this.getExpressApp() as Application;
+    const app = this.getExpressApp() as Express;
 
-    // Properly typed favicon handler
-    app.get('/favicon.ico', (req: Request<{}, any, any, ParsedQs, Record<string, any>>, res: Response<any, Record<string, any>>) => {
+    // Configure proxy trust for Render
+    app.set('trust proxy', process.env.TRUST_PROXY ? 1 : false);
+
+    // Debug endpoint
+    app.get('/debug/location', (req: Request, res: Response) => {
+      res.json({
+        headers: req.headers,
+        ip: req.ip,
+        xForwardedFor: req.headers['x-forwarded-for'],
+        augmentosLocation: req.headers['x-augmentos-location']
+      });
+    });
+
+    // Strict location policy
+    if (process.env.ENFORCE_AUGMENTOS_LOCATION === 'true') {
+      app.use((req: Request, res: Response, next: NextFunction) => {
+        if (req.path !== '/health' && !req.headers['x-augmentos-location']) {
+          res.status(403).json({ 
+            error: "Location must come from AugmentOS SDK" 
+          });
+          return;
+        }
+        next();
+      });
+    }
+
+    // Favicon handler
+    app.get('/favicon.ico', (req: Request, res: Response) => {
       res.status(204).end();
     });
 
-    // Middleware with explicit types
+    // Middleware with proper typing
     app.use((req: Request, res: Response, next: NextFunction) => {
       res.setHeader('ngrok-skip-browser-warning', 'true');
       next();
     });
 
+    // Request logging middleware
     app.use((req: Request, res: Response, next: NextFunction) => {
       this.requestCount++;
       const requestId = crypto.randomUUID();
@@ -102,9 +139,10 @@ class AirQualityApp extends TpaServer {
       next();
     });
 
+    // Body parser
     app.use(express.json());
 
-    // Routes with proper Request/Response types
+    // Main routes
     app.get('/', (req: Request, res: Response) => {
       res.json({
         status: "running",
@@ -116,7 +154,8 @@ class AirQualityApp extends TpaServer {
     app.get('/health', (req: Request, res: Response) => {
       res.json({
         status: "healthy",
-        sessions: this._activeSessions.size
+        sessions: this._activeSessions.size,
+        trustProxy: app.get('trust proxy')
       });
     });
 
@@ -153,6 +192,18 @@ class AirQualityApp extends TpaServer {
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     this._activeSessions.set(sessionId, { userId, started: new Date() });
 
+    if (session.onLocation) {
+      session.onLocation((update: LocationUpdate) => {
+        const trueLocation = {
+          lat: update.coords.latitude,
+          lon: update.coords.longitude,
+          source: "augmentos_gps"
+        };
+        console.log("📍 Verified location:", trueLocation);
+        this.checkAirQuality(session, trueLocation).catch(console.error);
+      });
+    }
+
     session.onTranscriptionForLanguage('en-US', (transcript) => {
       const text = transcript.text.toLowerCase();
       console.log(`🎤 Heard: "${text}"`);
@@ -161,12 +212,17 @@ class AirQualityApp extends TpaServer {
       }
     });
 
-    await this.checkAirQuality(session);
+    const fallbackCoords = await this.getApproximateCoords();
+    console.warn("⚠️ Using fallback location:", {
+      ...fallbackCoords,
+      source: "ip_geolocation"
+    });
+    await this.checkAirQuality(session, fallbackCoords);
   }
 
   private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
     try {
-      const response = await axios.get(
+      const response: AxiosResponse = await axios.get(
         `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${AQI_TOKEN}`,
         { timeout: 3000 }
       );
@@ -186,13 +242,18 @@ class AirQualityApp extends TpaServer {
     }
   }
 
-  private async checkAirQuality(session: TpaSession): Promise<void> {
+  private async checkAirQuality(
+    session: TpaSession,
+    coords?: { lat: number; lon: number }
+  ): Promise<void> {
     try {
-      const coords = session.location 
-        ? { lat: session.location.latitude, lon: session.location.longitude }
-        : await this.getApproximateCoords();
-      
-      const station = await this.getNearestAQIStation(coords.lat, coords.lon);
+      const location = coords || (
+        session.location
+          ? { lat: session.location.latitude, lon: session.location.longitude }
+          : await this.getApproximateCoords()
+      );
+
+      const station = await this.getNearestAQIStation(location.lat, location.lon);
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
       
       await session.layouts.showTextWall(
@@ -203,30 +264,25 @@ class AirQualityApp extends TpaServer {
         { view: ViewType.MAIN, durationMs: 10000 }
       );
 
-      // Robust audio handling
-      const audioBasePath = path.join(__dirname, '../public/audio/blip');
-      const aqiLevel = quality.label.toLowerCase().split(' ')[0];
-      const audioFiles = [
-        path.join(audioBasePath, `${aqiLevel}.mp3`),
-        path.join(audioBasePath, 'default.mp3')
-      ];
-
       if (session.audio?.play) {
+        const audioBasePath = path.join(__dirname, '../public/audio/blip');
+        const aqiLevel = quality.label.toLowerCase().split(' ')[0];
+        const audioFiles = [
+          path.join(audioBasePath, `${aqiLevel}.mp3`),
+          path.join(audioBasePath, 'default.mp3')
+        ];
+
         for (const audioFile of audioFiles) {
           if (existsSync(audioFile)) {
             try {
               await session.audio.play(audioFile);
-              console.log('Played audio:', path.basename(audioFile));
               break;
             } catch (audioError) {
               console.error('Audio playback failed:', audioError);
             }
           }
         }
-      } else {
-        console.warn('Audio API not available in this session');
       }
-
     } catch (error) {
       console.error("Check failed:", error);
       await session.layouts.showTextWall("Air quality unavailable", { 
@@ -237,20 +293,32 @@ class AirQualityApp extends TpaServer {
   }
 
   private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
-    try {
-      const ip = await axios.get('https://ipapi.co/json/', { timeout: 2000 });
-      if (ip.data.latitude && ip.data.longitude) {
-        return { lat: ip.data.latitude, lon: ip.data.longitude };
-      }
-    } catch (error) {
-      console.warn("IP geolocation failed - using config default:", error);
+    if (process.env.DISABLE_IP_GEOLOCATION_FALLBACK === "true") {
+      console.warn("IP geolocation fallback disabled by config");
+      return config.defaultLocation;
     }
-    return config.defaultLocation;
+
+    try {
+      const ipResponse: AxiosResponse = await axios.get('https://ipapi.co/json/', { 
+        timeout: 2000,
+        headers: {
+          "User-Agent": `AirQualityApp/${APP_VERSION} (Render)`
+        }
+      });
+      return { 
+        lat: ipResponse.data.latitude,
+        lon: ipResponse.data.longitude
+      };
+    } catch (error) {
+      console.error("IP geolocation failed:", error);
+      return config.defaultLocation;
+    }
   }
 }
 
 // Server Startup
-new AirQualityApp().getExpressApp().listen(PORT, () => {
+const server = new AirQualityApp();
+server.getExpressApp().listen(PORT, () => {
   console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
-  console.log(`Configure ngrok with: ngrok http ${PORT}`);
+  console.log(`Trust proxy setting: ${process.env.TRUST_PROXY ? 'enabled' : 'disabled'}`);
 });
