@@ -1,4 +1,4 @@
-// Version 2.0.6 - Full implementation with all type fixes
+// Version 2.1.2 - Proper base class extension
 import 'dotenv/config';
 import express, { Request, Response, NextFunction, Application } from 'express';
 import { fileURLToPath } from 'url';
@@ -15,7 +15,7 @@ const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 const config = JSON.parse(readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
-const APP_VERSION = "2.0.6";
+const APP_VERSION = "2.1.2";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
 const AQI_TOKEN = process.env.AQI_TOKEN as string;
@@ -26,7 +26,7 @@ if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   process.exit(1);
 }
 
-// AQI Levels from waqi.info
+// AQI Levels
 const AQI_LEVELS = [
   { max: 50, label: "Good", emoji: "😊", advice: "Perfect for outdoor activities!" },
   { max: 100, label: "Moderate", emoji: "😐", advice: "Acceptable air quality" },
@@ -36,20 +36,19 @@ const AQI_LEVELS = [
   { max: Infinity, label: "Hazardous", emoji: "☢️", advice: "Stay indoors with windows closed" }
 ];
 
-// Configuration for TPA SDK
-interface TpaServerConfig {
-  packageName: string;
-  apiKey: string;
-  port: number;
-  publicDir: string;
-  websocketUrl?: string;
-}
-
 interface AQIStationData {
   aqi: number;
   station: {
     name: string;
     geo: [number, number];
+  };
+}
+
+interface SessionData {
+  lastActive: number;
+  location?: {
+    lat: number;
+    lon: number;
   };
 }
 
@@ -59,7 +58,7 @@ declare module '@augmentos/sdk' {
       play(path: string): Promise<void>;
       speak?(text: string, options?: { language?: string }): Promise<void>;
     };
-    onLocation: (
+    onLocation(
       listener: (update: {
         coords: {
           latitude: number;
@@ -72,17 +71,11 @@ declare module '@augmentos/sdk' {
         };
         timestamp: number;
       }) => void
-    ) => void;
+    ): void;
   }
 }
 
-// Define a type for the specific layout method we need
-interface TextWallLayout {
-  showTextWall(text: string, options: { view: ViewType; durationMs: number }): Promise<void>;
-}
-
 class AirQualityApp extends TpaServer {
-  private _activeSessions = new Map<string, { userId: string; started: Date }>();
   private requestCount = 0;
   private readonly VOICE_COMMANDS = [
     "air quality",
@@ -92,39 +85,22 @@ class AirQualityApp extends TpaServer {
     "is the air safe",
     "nearest air quality station"
   ];
+  private sessionDataMap = new Map<string, SessionData>(); // Renamed to avoid conflict
 
   constructor() {
     super({
       packageName: "air-quality-app",
       apiKey: AUGMENTOS_API_KEY,
       port: PORT,
-      publicDir: path.join(__dirname, '../public')
-    } as any);
-    
-    // Store websocket URL in environment for webhook handler to use later
-    if (process.env.AUGMENTOS_WEBSOCKET_URL) {
-      console.log(`Using WebSocket URL: ${process.env.AUGMENTOS_WEBSOCKET_URL}`);
-    }
-    
-    // Add more detailed logging for debugging
-    console.log(`Initializing Air Quality app v${APP_VERSION}`);
-    console.log(`Package name: air-quality-app`);
-    console.log(`Public directory: ${path.join(__dirname, '../public')}`);
-    console.log(`API key length: ${AUGMENTOS_API_KEY?.length || 0} characters`);
-    console.log(`WebSocket URL: ${process.env.AUGMENTOS_WEBSOCKET_URL || 'Using default'}`);
-    
-    this.setupRoutes();
-    
-    // Register error handler for uncaught exceptions
-    process.on('uncaughtException', (error) => {
-      console.error('Uncaught exception:', error);
+      publicDir: path.join(__dirname, '../public'),
     });
+    this.setupRoutes();
   }
 
   private setupRoutes(): void {
     const app = this.getExpressApp() as Application;
 
-    app.get('/favicon.ico', (req: Request<{}, any, any, ParsedQs, Record<string, any>>, res: Response<any, Record<string, any>>) => {
+    app.get('/favicon.ico', (req: Request, res: Response) => {
       res.status(204).end();
     });
 
@@ -147,6 +123,7 @@ class AirQualityApp extends TpaServer {
       res.json({
         status: "running",
         version: APP_VERSION,
+        sessions: this.sessionDataMap.size,
         endpoints: ['/health', '/tpa_config.json']
       });
     });
@@ -154,7 +131,7 @@ class AirQualityApp extends TpaServer {
     app.get('/health', (req: Request, res: Response) => {
       res.json({
         status: "healthy",
-        sessions: this._activeSessions.size
+        sessions: this.sessionDataMap.size
       });
     });
 
@@ -172,82 +149,56 @@ class AirQualityApp extends TpaServer {
     app.post('/webhook', async (req: Request, res: Response) => {
       if (req.body?.type === 'session_request') {
         try {
-          console.log(`Received session request for ${req.body.sessionId}`);
-          console.log(`WebSocket URL: ${req.body.augmentOSWebsocketUrl || 'Not provided'}`);
-          
-          // Store the websocket URL if provided
-          if (req.body.augmentOSWebsocketUrl) {
-            process.env.AUGMENTOS_WEBSOCKET_URL = req.body.augmentOSWebsocketUrl;
-          }
-          
           await this.handleNewSession(req.body.sessionId, req.body.userId);
           res.json({ status: 'success' });
         } catch (error) {
           console.error('Session init failed:', error);
-          res.status(500).json({ status: 'error', message: 'Session initialization failed' });
+          res.status(500).json({ status: 'error' });
         }
       } else {
-        console.log('Unknown webhook request:', req.body);
-        res.status(400).json({ status: 'error', message: 'Invalid webhook request' });
+        res.status(400).json({ status: 'error' });
       }
     });
   }
 
   private async handleNewSession(sessionId: string, userId: string): Promise<void> {
-    console.log(`Initializing new session: ${sessionId} for user ${userId}`);
-    
-    // The TpaServer will automatically handle session registration when the webhook receives a request
-    // Just log the session info and continue
-    console.log(`Session ${sessionId} initialization complete`);
+    console.log(`Initializing session ${sessionId} for ${userId}`);
+    this.sessionDataMap.set(sessionId, { lastActive: Date.now() });
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
-    this._activeSessions.set(sessionId, { userId, started: new Date() });
-
-    let currentLocation: { lat: number; lon: number } | null = null;
-    let locationTimeout: NodeJS.Timeout;
+    const sessionData: SessionData = { lastActive: Date.now() };
+    this.sessionDataMap.set(sessionId, sessionData);
 
     session.onLocation((update) => {
-      console.log(`📍 Location updated: ${update.coords.latitude}, ${update.coords.longitude}`);
-      currentLocation = {
+      sessionData.lastActive = Date.now();
+      sessionData.location = {
         lat: update.coords.latitude,
         lon: update.coords.longitude
       };
-      clearTimeout(locationTimeout);
     });
-
-    locationTimeout = setTimeout(async () => {
-      if (!currentLocation) {
-        console.warn('Location not received, falling back to IP geolocation');
-        currentLocation = await this.getApproximateCoords();
-        await this.checkAirQuality(session, currentLocation);
-      }
-    }, 5000);
 
     session.onTranscriptionForLanguage('en-US', (transcript) => {
+      sessionData.lastActive = Date.now();
       const text = transcript.text.toLowerCase();
-      console.log(`🎤 Heard: "${text}"`);
       if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
-        this.checkAirQuality(session, currentLocation).catch(console.error);
+        this.checkAirQuality(session, sessionData.location).catch(console.error);
       }
     });
 
-    await this.checkAirQuality(session, currentLocation);
+    await this.checkAirQuality(session, sessionData.location);
   }
 
   private async checkAirQuality(
     session: TpaSession,
-    coords?: { lat: number; lon: number } | null
+    coords?: { lat: number; lon: number }
   ): Promise<void> {
     try {
       const finalCoords = coords || await this.getApproximateCoords();
-      
       const station = await this.getNearestAQIStation(finalCoords.lat, finalCoords.lon);
       const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
       
-      // Type assertion to access the showTextWall method
-      const layouts = session.layouts as unknown as TextWallLayout;
-      await layouts.showTextWall(
+      await (session.layouts as any).showTextWall(
         `📍 ${station.station.name}\n\n` +
         `Air Quality: ${quality.label} ${quality.emoji}\n` +
         `AQI: ${station.aqi}\n\n` +
@@ -255,34 +206,35 @@ class AirQualityApp extends TpaServer {
         { view: ViewType.MAIN, durationMs: 10000 }
       );
 
-      const audioBasePath = path.join(__dirname, '../public/audio/blip');
-      const aqiLevel = quality.label.toLowerCase().split(' ')[0];
-      const audioFiles = [
-        path.join(audioBasePath, `${aqiLevel}.mp3`),
-        path.join(audioBasePath, 'default.mp3')
-      ];
-
-      if (session.audio?.play) {
-        for (const audioFile of audioFiles) {
-          if (existsSync(audioFile)) {
-            try {
-              await session.audio.play(audioFile);
-              console.log('Played audio:', path.basename(audioFile));
-              break;
-            } catch (audioError) {
-              console.error('Audio playback failed:', audioError);
-            }
-          }
-        }
-      }
+      await this.playAudioForQuality(session, quality.label);
     } catch (error) {
-      console.error("Check failed:", error);
-      // Type assertion to access the showTextWall method
-      const layouts = session.layouts as unknown as TextWallLayout;
-      await layouts.showTextWall("Air quality unavailable", { 
+      console.error("Air quality check failed:", error);
+      await (session.layouts as any).showTextWall("Air quality unavailable", { 
         view: ViewType.MAIN,
         durationMs: 3000 
       });
+    }
+  }
+
+  private async playAudioForQuality(session: TpaSession, qualityLabel: string): Promise<void> {
+    if (!session.audio?.play) return;
+
+    const audioBasePath = path.join(__dirname, '../public/audio/blip');
+    const aqiLevel = qualityLabel.toLowerCase().split(' ')[0];
+    const audioFiles = [
+      path.join(audioBasePath, `${aqiLevel}.mp3`),
+      path.join(audioBasePath, 'default.mp3')
+    ];
+
+    for (const audioFile of audioFiles) {
+      if (existsSync(audioFile)) {
+        try {
+          await session.audio.play(audioFile);
+          break;
+        } catch (error) {
+          console.error('Audio playback failed:', error);
+        }
+      }
     }
   }
 
@@ -325,4 +277,7 @@ class AirQualityApp extends TpaServer {
 new AirQualityApp().getExpressApp().listen(PORT, () => {
   console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
   console.log(`Configure ngrok with: ngrok http ${PORT}`);
+}).on('error', (err: Error) => {
+  console.error('Server error:', err);
+  process.exit(1);
 });
