@@ -1,15 +1,4 @@
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
 {
-  "defaultLocation": {
-    "lat": 37.983843, 
-    "lon": -1.129293
-  }
-}
-=======
-=======
->>>>>>> Stashed changes
-﻿{
   "defaultLocation": {
     "lat": 37.983843,
     "lon": -1.129293
@@ -19,7 +8,3 @@
     "fallback": "default.mp3"
   }
 }
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
