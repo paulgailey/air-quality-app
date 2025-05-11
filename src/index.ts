@@ -1,4 +1,6 @@
 // Air Quality App v2.0.8 - Production Ready (Zero TS Errors)
+// Add this at the VERY TOP of index.ts
+global.Buffer = global.Buffer || require('buffer').Buffer;
 import * as dotenv from 'dotenv';
 dotenv.config();
 import express, { Request, Response, NextFunction } from 'express';

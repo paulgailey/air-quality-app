@@ -1,5 +1,11 @@
-// src/types/augmentos.d.ts
-import { LocationUpdate } from './types';
+// Remove the import and define LocationUpdate directly
+interface LocationUpdate {
+  coords: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
 declare module '@augmentos/sdk' {
   interface TpaSession {
     id: string;
@@ -8,9 +14,8 @@ declare module '@augmentos/sdk' {
     requestLocation?: () => Promise<void>;
   }
 
-  // Enhanced version with emit()
   interface SessionEvents {
     onLocation(listener: (update: LocationUpdate) => void): void;
-    emit(event: 'location', update: LocationUpdate): void;  // <-- New addition
+    emit(event: 'location', update: LocationUpdate): void;
   }
 }
