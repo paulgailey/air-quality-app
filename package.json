@@ -5,20 +5,16 @@
   "augmentos": {
     "versionDisplay": "Air Quality v2.0.5"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/paulgailey/air-quality-app"
-  },
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "scripts": {
-    "build": "tsc --noEmitOnError",
+    "build": "tsc && bun build ./src/index.ts --outdir ./dist",
     "dev": "bun --hot src/index.ts",
-    "start": "bun run src/index.ts",
+    "start": "bun ./dist/index.js",
     "clean-install": "rm -rf node_modules bun.lockb && bun install --force",
+    "type-check": "tsc --noEmit",
     "docker:dev": "docker compose -f docker/docker-compose.dev.yml -p dev up",
     "docker:dev:detach": "./scripts/docker-dev.sh -d",
-    "docker:stop": "docker compose -f docker/docker-compose.dev.yml -p dev down",
-    "postinstall": ""
+    "docker:stop": "docker compose -f docker/docker-compose.dev.yml -p dev down"
   },
   "dependencies": {
     "@augmentos/sdk": "1.1.4",
@@ -26,14 +22,15 @@
     "axios": "^1.6.0",
     "dotenv": "^16.5.0",
     "express": "^4.21.2",
-    "jsonwebtoken": "9.0.2",
-    "npm-force-resolutions": "^0.0.10"
+    "jsonwebtoken": "9.0.2"
   },
   "devDependencies": {
+    "@types/bun": "^1.2.13",
     "@types/express": "^5.0.1",
+    "@types/jsonwebtoken": "^9.0.5",
     "@types/qs": "^6.9.18",
-    "typescript": "^5.0.0",
-    "@types/bun": "latest"
+    "bun-types": "^1.2.13",
+    "typescript": "^5.0.0"
   },
   "resolutions": {
     "jsonwebtoken": "9.0.2"
