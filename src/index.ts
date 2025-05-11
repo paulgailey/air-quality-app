@@ -1,4 +1,4 @@
-// Version 2.0.5 - Complete production-ready version
+// Version 2.0.5 - Complete production-ready version for Render
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import { fileURLToPath } from 'url';
