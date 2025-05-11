@@ -7,9 +7,9 @@
   },
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && bun build ./src/index.ts --outdir ./dist",
-    "dev": "bun --hot src/index.ts",
+    "build": "tsc && bun build ./src/index.ts --outdir ./dist --target node",
     "start": "bun ./dist/index.js",
+    "dev": "bun --hot src/index.ts",
     "clean-install": "rm -rf node_modules bun.lockb && bun install --force",
     "type-check": "tsc --noEmit",
     "docker:dev": "docker compose -f docker/docker-compose.dev.yml -p dev up",
