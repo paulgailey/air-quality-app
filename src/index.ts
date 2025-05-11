@@ -1,18 +1,17 @@
-// Air Quality App v2.0.7 - Production Ready (Zero TS Errors)
-// Direct import of dotenv and configure it manually
+// Air Quality App v2.0.8 - Production Ready (Zero TS Errors)
 import * as dotenv from 'dotenv';
 dotenv.config();
 import express, { Request, Response, NextFunction } from 'express';
 import * as path from 'path';
-import { TpaSession } from '@augmentos/sdk'; // Removed problematic imports
+import { TpaSession } from '@augmentos/sdk';
 import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync, existsSync } from 'fs';
 
 // Configuration
-const __dirname = process.cwd(); // Using process.cwd() instead of fileURLToPath
+const __dirname = process.cwd();
 const config = JSON.parse(readFileSync(path.join(__dirname, 'config.json'), 'utf-8'));
-const APP_VERSION = "2.0.7";
+const APP_VERSION = "2.0.8";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Strict Environment Validation
@@ -88,10 +87,21 @@ class AirQualityApp {
     // Render-specific config
     this.app.set('trust proxy', process.env.TRUST_PROXY ? 1 : false);
 
-    // Middleware
+    // Fixed middleware declaration
     this.app.use((req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+      res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,Authorization');
       res.setHeader('ngrok-skip-browser-warning', 'true');
+      
+      console.log(`${new Date().toISOString()} - ${req.method} ${req.path} from ${req.ip}`);
+      
       next();
+    });
+
+    // Options handler moved to separate route
+    this.app.options('*', (req: Request, res: Response) => {
+      res.sendStatus(200);
     });
 
     this.app.use((req: Request, res: Response, next: NextFunction) => {
@@ -149,7 +159,7 @@ class AirQualityApp {
           `Air Quality: ${quality.label} ${quality.emoji}\n` +
           `AQI: ${station.aqi}\n\n` +
           `${quality.advice}`,
-          { view: 'main', durationMs: 10000 } // Changed ViewType.MAIN to string
+          { view: 'main', durationMs: 10000 }
         );
       }
 
@@ -170,7 +180,7 @@ class AirQualityApp {
     }
   }
 
-  public getExpressApp() {
+  public getExpressApp(): express.Express {
     return this.app;
   }
 
@@ -210,8 +220,30 @@ class AirQualityApp {
   }
 }
 
-// Server Startup
+// Enhanced Server Startup
 const app = new AirQualityApp();
-app.getExpressApp().listen(PORT, () => {
+const server = app.getExpressApp().listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Host: ${process.env.HOST || '0.0.0.0'}`);
+  console.log(`Public URL: ${process.env.RENDER_EXTERNAL_URL || 'not set'}`);
+  console.log(`AQI API Key: ${AQI_TOKEN ? '✓ Present' : '✗ Missing'}`);
+  console.log(`AugmentOS API Key: ${AUGMENTOS_API_KEY ? '✓ Present' : '✗ Missing'}`);
+});
+
+// Handle shutdown gracefully
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received. Shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received. Shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });
