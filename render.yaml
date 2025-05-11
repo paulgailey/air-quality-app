@@ -2,14 +2,20 @@ services:
   - type: web
     name: air-quality-app
     env: node
+    region: frankfurt
     plan: free
-    buildCommand: bun install && bun run build
+    buildCommand: |
+      rm -f bun.lockb  # Clear any corrupted lockfile
+      bun install --force
+      bun run build
     startCommand: bun run src/index.ts
     envVars:
       - key: PORT
         value: 3000
       - key: NODE_ENV
         value: production
+      - key: TRUST_PROXY
+        value: 1  # Required for Render's proxy
     secrets:
       - key: AUGMENTOS_API_KEY
         fromService:
@@ -19,3 +25,5 @@ services:
         fromService:
           name: waqi-secrets
           type: secret
+    healthCheckPath: /health
+    autoDeploy: true

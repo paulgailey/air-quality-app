@@ -1,4 +1,4 @@
-// Version 2.0.5 - Complete production-ready version for Render
+// Version 2.0.5 - Production-ready for Render
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import { fileURLToPath } from 'url';
@@ -14,7 +14,7 @@ const config = JSON.parse(readFileSync(path.join(__dirname, '../config.json'), '
 const APP_VERSION = "2.0.5";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-// Validate and assert environment variables
+// Environment Validation
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const AQI_TOKEN = process.env.AQI_TOKEN;
 
