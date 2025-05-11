@@ -1,7 +1,6 @@
 // Air Quality App v2.0.7 - Production Ready (Zero TS Errors)
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
-import { fileURLToPath } from 'url';
 import path from 'path';
 import { TpaSession } from '@augmentos/sdk'; // Removed problematic imports
 import axios from 'axios';
@@ -9,8 +8,8 @@ import crypto from 'crypto';
 import { readFileSync, existsSync } from 'fs';
 
 // Configuration
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const config = JSON.parse(readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
+const __dirname = process.cwd(); // Using process.cwd() instead of fileURLToPath
+const config = JSON.parse(readFileSync(path.join(__dirname, 'config.json'), 'utf-8'));
 const APP_VERSION = "2.0.7";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
@@ -100,7 +99,7 @@ class AirQualityApp {
     });
 
     this.app.use(express.json());
-    this.app.use(express.static(path.join(__dirname, '../public')));
+    this.app.use(express.static(path.join(__dirname, 'public')));
 
     // Routes
     this.app.get('/', (req: Request, res: Response) => {
@@ -153,7 +152,7 @@ class AirQualityApp {
       }
 
       if (session.audio?.play) {
-        const audioPath = path.join(__dirname, '../public/audio/blip', `${quality.label.toLowerCase().split(' ')[0]}.mp3`);
+        const audioPath = path.join(__dirname, 'public/audio/blip', `${quality.label.toLowerCase().split(' ')[0]}.mp3`);
         if (existsSync(audioPath)) {
           await session.audio.play(audioPath);
         }
