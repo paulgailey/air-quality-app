@@ -1,7 +1,9 @@
 // Air Quality App v2.0.7 - Production Ready (Zero TS Errors)
-import 'dotenv/config';
+// Direct import of dotenv and configure it manually
+import * as dotenv from 'dotenv';
+dotenv.config();
 import express, { Request, Response, NextFunction } from 'express';
-import path from 'path';
+import * as path from 'path';
 import { TpaSession } from '@augmentos/sdk'; // Removed problematic imports
 import axios from 'axios';
 import crypto from 'crypto';
