@@ -8,7 +8,7 @@ import { AQI_LEVELS, LocationUpdate } from './types/types.js';
 import { getNearestAQIStation } from './services/airQualityService.js';
 import express from 'express';
 import crypto from 'crypto';
-import fetch, { RequestInit } from 'node-fetch';
+import { default as fetch, RequestInit } from 'node-fetch';
 
 // Configuration
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { isAxiosError } from 'axios';
 export async function getNearestAQIStation(lat, lon, retries = 2) {
     const AQI_TOKEN = process.env.AQI_TOKEN;
     if (!AQI_TOKEN) {
@@ -13,25 +13,27 @@ export async function getNearestAQIStation(lat, lon, retries = 2) {
         if (!response.data || response.data.status !== 'ok') {
             throw new Error(response.data?.message || 'Invalid AQI API response');
         }
-        if (typeof response.data.data.aqi !== 'number') {
-            throw new Error('Invalid AQI value received');
-        }
+        const aqi = response.data.data.aqi;
+        const name = response.data.data.city?.name || `Station at ${lat.toFixed(2)},${lon.toFixed(2)}`;
+        const geo = response.data.data.city?.geo || [lat, lon];
         return {
-            aqi: response.data.data.aqi,
-            station: {
-                name: response.data.data.city?.name || `Station at ${lat.toFixed(2)},${lon.toFixed(2)}`,
-                geo: response.data.data.city?.geo || [lat, lon]
-            }
+            aqi,
+            station: { name, geo },
+            getLatestAQI: () => aqi
         };
     }
     catch (error) {
-        console.error(`AQI API Error (${retries} retries left):`, error);
+        console.error(`AQI API Error (${retries} retries left):`, error instanceof Error ? error.message : error);
         if (retries > 0) {
             await new Promise(resolve => setTimeout(resolve, 1000));
             return getNearestAQIStation(lat, lon, retries - 1);
         }
-        throw new Error(axios.isAxiosError(error)
-            ? `Network error: ${error.message}`
-            : 'Failed to fetch air quality data');
+        if (isAxiosError(error)) {
+            throw new Error(`Network error: ${error.message}`);
+        }
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error('Unknown error occurred while fetching air quality data');
     }
 }

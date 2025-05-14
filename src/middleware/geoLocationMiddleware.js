@@ -7,10 +7,9 @@ const geoLocationMiddleware = async (req, res, next) => {
         if (!ip || ip === "::1") {
             return next();
         }
-        const response = await axios.get(`http://ip-api.com/json/${ip}`);
+        const response = await axios.get('http://ip-api.com/json/');
         if (response.data.status === "success") {
             const { city, regionName: region, country, lat, lon } = response.data;
-            req.location = { city, region, country, lat, lon };
         }
     }
     catch (error) {

@@ -10,6 +10,8 @@ lerna-debug.log*
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
+Add-Content .gitignore "`n# Local scripts`nreset.ps1"
+
 # Runtime data
 pids
 *.pid

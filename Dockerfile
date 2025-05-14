@@ -1,29 +1,26 @@
-# Use Bun official image
-FROM oven/bun:1.1
-
-# Set working directory
+# Stage 1: Build
+FROM oven/bun:1.1-slim AS builder
 WORKDIR /app
 
-# Copy package.json and package-lock.json first
-COPY package*.json ./
+# Copy package files
+COPY package.json .
+COPY bun.lockb .
+RUN bun install --production
 
-# Install dependencies
-RUN bun install
-
-# Copy the rest of the application code
+# Copy and build source
 COPY . .
-
-# Create .env file with default values
-RUN echo "# Default environment variables\nPORT=3000\nHOST=0.0.0.0\n" > .env
-
-# Run the build script
 RUN bun run build
 
-# Verify the build output exists
-RUN ls -la dist/
+# Stage 2: Runtime
+FROM oven/bun:1.1-slim
+WORKDIR /app
 
-# Expose port
-EXPOSE 3000
+# Copy only necessary files from builder
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json .
 
-# Start the app from built output
-CMD ["bun", "dist/index.js", "--hostname=0.0.0.0"]
+# Railway configuration
+ENV PORT=3000
+EXPOSE $PORT
+CMD ["bun", "dist/index.js"]
