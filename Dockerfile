@@ -5,10 +5,13 @@ WORKDIR /app
 # Install curl for debugging and git for potential dependencies
 RUN apk add --no-cache curl git
 
-# Copy package files
+# Copy package files first
 COPY package.json ./
 COPY tsconfig.json ./
 COPY bun.lockb* ./
+
+# Remove the postinstall script from package.json before installing
+RUN sed -i '/"postinstall"/d' package.json
 
 # Install dependencies (including dev dependencies for TypeScript compilation)
 RUN bun install
@@ -19,8 +22,8 @@ COPY . .
 # Debug: List files to verify source files are copied correctly
 RUN find . -type f -name "*.ts" -o -name "*.js" | sort
 
-# Build the TypeScript application
-RUN bun run build
+# Build the TypeScript application manually
+RUN rm -rf dist && mkdir -p dist && bun x tsc --skipLibCheck && mkdir -p dist/public
 
 # Stage 2: Runtime
 FROM --platform=linux/amd64 oven/bun:1.1-alpine

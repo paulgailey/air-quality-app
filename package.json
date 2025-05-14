@@ -4,14 +4,13 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "rimraf dist && tsc --skipLibCheck && mkdirp dist/public",
+    "build": "rm -rf dist && tsc --skipLibCheck && mkdir -p dist/public",
     "test": "cross-env NODE_OPTIONS='--loader ts-node/esm' node src/services/airQualityService.test.ts",
-    "test:integration": "npm run build && npm start",
-    "clean": "rimraf node_modules dist",
-    "reinstall": "npm run clean && npm install",
+    "test:integration": "bun run build && bun start",
+    "clean": "rm -rf node_modules dist",
+    "reinstall": "bun run clean && bun install",
     "start": "node dist/index.js",
-    "dev": "bun run src/index.ts",
-    "postinstall": "npm run build"
+    "dev": "bun run src/index.ts"
   },
   "dependencies": {
     "@augmentos/sdk": "^1.1.7",
@@ -29,7 +28,6 @@
     "@types/node": "^22.15.15",
     "@types/node-fetch": "^2.6.12",
     "cross-env": "^7.0.3",
-    "mkdirp": "^3.0.1",
     "rimraf": "^6.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
