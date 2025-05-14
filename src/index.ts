@@ -100,15 +100,7 @@ class AirQualityApp extends TpaServer {
   private setupRoutes(): void {
     const app = this.getExpressApp();
 
-    app.use(express.json());
-    app.use((req, res, next) => {
-      this.requestCount++;
-      const requestId = crypto.randomUUID();
-      res.set('X-Request-ID', requestId);
-      console.log(`[${new Date().toISOString()}] REQ#${this.requestCount} ${req.method} ${req.path}`);
-      next();
-    });
-
+    // Healthcheck should be first to avoid delays
     app.get('/health', (req, res) => {
       res.status(200).json({
         status: "healthy",
@@ -119,47 +111,30 @@ class AirQualityApp extends TpaServer {
       });
     });
 
-    app.get('/tpa_config.json', (req, res) => {
-      res.json({
-        voiceCommands: this.VOICE_COMMANDS.map(phrase => ({
-          phrase,
-          description: "Check air quality"
-        })),
-        permissions: ["location"],
-        transcriptionLanguages: ["en-US"]
-      });
-    });
-
-    app.post('/webhook', async (req, res) => {
-      try {
-        res.status(200).json({
-          status: "success",
-          message: "Webhook received",
-          timestamp: new Date().toISOString()
-        });
-      } catch (error) {
-        res.status(200).json({ status: "error", message: "Webhook processing failed" });
-      }
-    });
-
-    app.get('/', (req, res) => {
-      res.json({
-        status: "running",
-        version: "1.3.5",
-        endpoints: ['/health', '/tpa_config.json']
-      });
+    app.use(express.json());
+    app.use((req, res, next) => {
+      this.requestCount++;
+      const requestId = crypto.randomUUID();
+      res.set('X-Request-ID', requestId);
+      console.log(`[${new Date().toISOString()}] REQ#${this.requestCount} ${req.method} ${req.path}`);
+      next();
     });
   }
 
-  protected async onSession(session: TpaSession & {
-    events: {
-      on(event: string, handler: (data: any) => void): void;
-      off?(event: string, handler: (data: any) => void): void;
-    };
-    layouts: {
-      showTextWall(text: string, options: { view: ViewType; durationMs: number }): Promise<void>;
-    };
-  }, sessionId: string, userId: string): Promise<void> {
+  // Corrected the onSession method signature and placement
+  public async onSession(
+    session: TpaSession & {
+      events: {
+        on(event: string, handler: (data: any) => void): void;
+        off?(event: string, handler: (data: any) => void): void;
+      };
+      layouts: {
+        showTextWall(text: string, options: { view: ViewType; durationMs: number }): Promise<void>;
+      };
+    },
+    sessionId: string,
+    userId: string
+  ): Promise<void> {
     console.log(`New session started: ${sessionId} for user ${userId}`);
 
     const locationHandler = async (update: any) => {
