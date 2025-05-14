@@ -6,7 +6,7 @@ WORKDIR /app
 RUN apk add --no-cache git
 
 # Copy only package files first for caching
-COPY bun.lockb* package.json tsconfig.json ./
+COPY ["bun.lockb", "package.json", "tsconfig.json", "./"]
 
 # Remove postinstall script before install
 RUN sed -i '/"postinstall"/d' package.json
@@ -15,10 +15,8 @@ RUN sed -i '/"postinstall"/d' package.json
 RUN bun install --no-progress --max-workers=1
 
 # Copy source files
-COPY ./src ./src
-COPY ./types ./types
-COPY ./services ./services
-COPY ./public ./public
+COPY ./src/ ./src/
+COPY ./public/ ./public/ 2>/dev/null || true
 
 # Ensure types dir exists
 RUN mkdir -p ./types
