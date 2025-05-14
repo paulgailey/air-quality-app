@@ -4,13 +4,14 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
+    "start": "bun run dist/index.js",
     "build": "bun run tsc --skipLibCheck",
+    "dev": "bun run src/index.ts",
+    "postinstall": "bun run build",
     "test": "cross-env NODE_OPTIONS='--loader ts-node/esm' node src/services/airQualityService.test.ts",
     "test:integration": "bun run build && bun start",
     "clean": "rm -rf node_modules dist",
-    "reinstall": "bun run clean && bun install",
-    "start": "bun src/index.ts",
-    "dev": "bun run src/index.ts"
+    "reinstall": "bun run clean && bun install"
   },
   "dependencies": {
     "@augmentos/sdk": "^1.1.7",

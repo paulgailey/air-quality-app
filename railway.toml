@@ -1,0 +1,5 @@
+[build]
+command = "bun install && bun run build"
+
+[run]
+command = "bun start"
