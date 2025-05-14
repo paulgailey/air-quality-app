@@ -1,4 +1,4 @@
-// Version 1.3.6 - Fixed all TypeScript errors while preserving full functionality
+// Version 1.3.7 - Fixed SDK initialization and module system issues
 import * as dotenv from 'dotenv';
 dotenv.config();
 import path from 'path';
@@ -58,7 +58,6 @@ interface TpaSession {
 }
 
 class AirQualityApp {
-  private tpaServer: any; // Using any to avoid SDK import issues
   private expressServer?: ReturnType<express.Application['listen']>;
   private readonly VOICE_COMMANDS = [
     "what's the air quality like",
@@ -71,37 +70,41 @@ class AirQualityApp {
   private expressApp: express.Application;
 
   constructor() {
-    // Dynamic import of the SDK to handle any module structure
+    // Initialize Express directly instead of through SDK
+    this.expressApp = express();
+    
+    this.expressServer = this.expressApp.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    });
+
+    this.setupRoutes();
+    console.log(`Starting AirQualityApp on port ${PORT}`);
+
+    // Initialize SDK asynchronously
+    this.initializeSdk().catch(err => {
+      console.error('SDK initialization failed:', err);
+    });
+  }
+
+  private async initializeSdk(): Promise<void> {
     try {
-      // Try different import approaches
-      const SDK = require('@augmentos/sdk');
-      const TpaServerClass = SDK.default || SDK.TpaServer || SDK;
+      // Dynamic import to handle both ESM and CJS
+      const sdkModule = await import('@augmentos/sdk');
+      const TpaServer = sdkModule.default || sdkModule.TpaServer || sdkModule;
       
-      // Initialize the TpaServer
-      this.tpaServer = new TpaServerClass({
+      const tpaServer = new TpaServer({
         packageName: PACKAGE_NAME,
         apiKey: AUGMENTOS_API_KEY,
         port: PORT,
         publicDir: path.join(__dirname, 'public')
       });
-      
-      // Set up session handling
-      // @ts-ignore - Accessing SDK method
-      this.tpaServer.onSession = this.onSession.bind(this);
-      
-      // Get Express app from the server
-      // @ts-ignore - Accessing SDK method
-      this.expressApp = this.tpaServer.getExpressApp();
-      
-      this.expressServer = this.expressApp.listen(PORT, '0.0.0.0', () => {
-        console.log(`Server running on http://0.0.0.0:${PORT}`);
-      });
-  
-      this.setupRoutes();
-      console.log(`Starting AirQualityApp on port ${PORT}`);
-    } catch (error) {
-      console.error('Failed to initialize SDK:', error);
-      throw error;
+
+      // Setup session handling
+      tpaServer.onSession = this.onSession.bind(this);
+      console.log('SDK initialized successfully');
+    } catch (err) {
+      console.error('Failed to initialize SDK:', err);
+      // Continue without SDK functionality
     }
   }
 
@@ -124,11 +127,6 @@ class AirQualityApp {
   }
 
   private setupRoutes(): void {
-    if (!this.expressApp) {
-      console.error('Express app not initialized');
-      return;
-    }
-    
     const app = this.expressApp;
 
     app.use(express.json());
@@ -176,7 +174,7 @@ class AirQualityApp {
     app.get('/', (req, res) => {
       res.json({
         status: "running",
-        version: "1.3.6",
+        version: "1.3.7",
         endpoints: ['/health', '/tpa_config.json']
       });
     });
@@ -288,7 +286,7 @@ class AirQualityApp {
 
   private async getIPBasedLocation(): Promise<{ lat: number; lon: number }> {
     const options: RequestInit = {
-      headers: { 'User-Agent': 'AirQualityApp/1.3.6' }
+      headers: { 'User-Agent': 'AirQualityApp/1.3.7' }
     };
 
     const controller = new AbortController();

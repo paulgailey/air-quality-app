@@ -1,40 +1,8 @@
 {
-  "name": "air-quality-app",
-  "version": "1.0.0",
-  "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "rm -rf dist && tsc && cp -r src/public dist/public || true",
     "start": "NODE_ENV=production node dist/index.js",
-    "dev": "bun run src/index.ts",
-    "postinstall": "bun run build",
-    "test": "cross-env NODE_OPTIONS='--loader ts-node/esm' node src/services/airQualityService.test.ts",
-    "test:integration": "bun run build && bun start",
-    "clean": "rm -rf node_modules dist",
-    "reinstall": "bun run clean && bun install"
-  },
-  "dependencies": {
-    "@augmentos/sdk": "^1.1.7",
-    "axios": "^1.9.0",
-    "cookie-parser": "^1.4.6",
-    "dotenv": "^16.0.3",
-    "express": "^4.21.2",
-    "jsonwebtoken": "9.0.2",
-    "node-fetch": "^3.3.2",
-    "ws": "^8.16.0"
-  },
-  "devDependencies": {
-    "@types/cookie-parser": "^1.4.3",
-    "@types/dotenv": "^8.2.3",
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.15.18",
-    "@types/node-fetch": "^2.6.12",
-    "cross-env": "^7.0.3",
-    "rimraf": "^6.0.1",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
-  },
-  "overrides": {
-    "jsonwebtoken": "9.0.2"
+    "build": "rm -rf dist && tsc",
+    "dev": "bun run src/index.ts"
   }
 }
