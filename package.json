@@ -1,8 +1,21 @@
 {
+  "name": "air-quality-app",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "start": "NODE_ENV=production node dist/index.js",
-    "build": "rm -rf dist && tsc",
-    "dev": "bun run src/index.ts"
+    "build": "rm -rf dist && bun add -d typescript && tsc",
+    "dev": "bun run src/index.ts",
+    "postinstall": "bun run build"
+  },
+  "dependencies": {
+    "@augmentos/sdk": "^1.1.7",
+    "dotenv": "^16.0.3",
+    "express": "^4.21.2",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.15",
+    "typescript": "^5.8.3"
   }
 }

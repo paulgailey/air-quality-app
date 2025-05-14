@@ -1,4 +1,4 @@
-// Version 1.3.7 - Fixed SDK initialization and module system issues
+// Version 1.4.0 - Complete rewrite with robust SDK initialization
 import * as dotenv from 'dotenv';
 dotenv.config();
 import path from 'path';
@@ -57,6 +57,17 @@ interface TpaSession {
   };
 }
 
+// Define TpaServer interface
+interface TpaServer {
+  new (config: {
+    packageName: string;
+    apiKey: string;
+    port: number;
+    publicDir: string;
+  }): TpaServer;
+  onSession: (session: TpaSession, sessionId: string, userId: string) => Promise<void>;
+}
+
 class AirQualityApp {
   private expressServer?: ReturnType<express.Application['listen']>;
   private readonly VOICE_COMMANDS = [
@@ -68,9 +79,9 @@ class AirQualityApp {
   ] as const;
   private requestCount = 0;
   private expressApp: express.Application;
+  private tpaServer?: any;
 
   constructor() {
-    // Initialize Express directly instead of through SDK
     this.expressApp = express();
     
     this.expressServer = this.expressApp.listen(PORT, '0.0.0.0', () => {
@@ -80,7 +91,6 @@ class AirQualityApp {
     this.setupRoutes();
     console.log(`Starting AirQualityApp on port ${PORT}`);
 
-    // Initialize SDK asynchronously
     this.initializeSdk().catch(err => {
       console.error('SDK initialization failed:', err);
     });
@@ -88,19 +98,33 @@ class AirQualityApp {
 
   private async initializeSdk(): Promise<void> {
     try {
-      // Dynamic import to handle both ESM and CJS
+      // Dynamic import with proper error handling
       const sdkModule = await import('@augmentos/sdk');
-      const TpaServer = sdkModule.default || sdkModule.TpaServer || sdkModule;
       
-      const tpaServer = new TpaServer({
+      // Debug log to inspect module structure
+      console.log('SDK Module Exports:', Object.keys(sdkModule));
+
+      // Fixed constructor approach - directly use what's imported, no accessing .default
+      const TpaServerConstructor = sdkModule.TpaServer || sdkModule;
+      
+      if (typeof TpaServerConstructor !== 'function') {
+        throw new Error('No valid constructor found in SDK exports. Available exports: ' + 
+          Object.keys(sdkModule).join(', '));
+      }
+
+      console.log('Using TpaServer constructor:', TpaServerConstructor.name || 'Anonymous');
+
+      this.tpaServer = new TpaServerConstructor({
         packageName: PACKAGE_NAME,
         apiKey: AUGMENTOS_API_KEY,
         port: PORT,
         publicDir: path.join(__dirname, 'public')
       });
 
-      // Setup session handling
-      tpaServer.onSession = this.onSession.bind(this);
+      if (typeof this.tpaServer.onSession !== 'function') {
+        this.tpaServer.onSession = this.onSession.bind(this);
+      }
+
       console.log('SDK initialized successfully');
     } catch (err) {
       console.error('Failed to initialize SDK:', err);
@@ -174,7 +198,7 @@ class AirQualityApp {
     app.get('/', (req, res) => {
       res.json({
         status: "running",
-        version: "1.3.7",
+        version: "1.4.0",
         endpoints: ['/health', '/tpa_config.json']
       });
     });
@@ -219,6 +243,14 @@ class AirQualityApp {
 
     session.events.on('location', locationHandler);
     session.events.on('transcription', transcriptionHandler);
+
+    // Cleanup on session end
+    const cleanup = () => {
+      session.events.off?.('location', locationHandler);
+      session.events.off?.('transcription', transcriptionHandler);
+    };
+
+    session.events.on('end', cleanup);
   }
 
   private async getLocationWithFallback(session: TpaSession): Promise<{ lat: number; lon: number }> {
@@ -286,7 +318,7 @@ class AirQualityApp {
 
   private async getIPBasedLocation(): Promise<{ lat: number; lon: number }> {
     const options: RequestInit = {
-      headers: { 'User-Agent': 'AirQualityApp/1.3.7' }
+      headers: { 'User-Agent': 'AirQualityApp/1.4.0' }
     };
 
     const controller = new AbortController();
