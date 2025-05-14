@@ -1,22 +1,9 @@
-# Node/Bun artifacts
 node_modules
-bun.lockb
-*.log
-
-# Build output
 dist
-build
-
-# OS / IDE files
-.DS_Store
-Thumbs.db
-.vscode
-.idea
-
-# Git and version control
+*.log
 .git
-.gitignore
-
-# Env files
+*.tsbuildinfo
 .env
-.env.local
+.DS_Store
+bun.lockb.backup
+.vscode
