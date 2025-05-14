@@ -4,8 +4,8 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "start": "bun run dist/index.js",
-    "build": "bun run tsc --skipLibCheck",
+    "build": "rm -rf dist && tsc && cp -r src/public dist/public || true",
+    "start": "NODE_ENV=production node dist/index.js",
     "dev": "bun run src/index.ts",
     "postinstall": "bun run build",
     "test": "cross-env NODE_OPTIONS='--loader ts-node/esm' node src/services/airQualityService.test.ts",
