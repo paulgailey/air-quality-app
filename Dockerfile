@@ -14,15 +14,20 @@ RUN sed -i '/"postinstall"/d' package.json
 # Install dependencies
 RUN bun install
 
-# Copy source files (with existence checks)
+# Create directory structure
 RUN mkdir -p src/ public/ services/ types/
+
+# Copy source files (simplified approach)
 COPY ./src/ ./src/
-RUN if [ -d ./public ]; then cp -r ./public/ ./public/; fi
-RUN if [ -d ./services ]; then cp -r ./services/ ./services/; fi
-RUN if [ -d ./types ]; then cp -r ./types/ ./types/; fi
+COPY ["./public", "./public"] 2>/dev/null || true
+COPY ["./services", "./services"] 2>/dev/null || true
+COPY ["./types", "./types"] 2>/dev/null || true
 
 # Create entry point
 RUN echo "export * from './src/index';" > index.ts
+
+# Verify copied files
+RUN ls -la public/ services/ types/
 
 # Build
 RUN rm -rf dist/ && \
@@ -34,11 +39,10 @@ FROM --platform=linux/amd64 oven/bun:1.1-alpine
 WORKDIR /app/
 RUN apk add --no-cache curl
 
-# Copy production files
-COPY --chown=1000:1000 --from=builder /app/node_modules/ ./node_modules/
-COPY --chown=1000:1000 --from=builder /app/dist/ ./dist/
-COPY --chown=1000:1000 --from=builder /app/package.json ./
-COPY --chown=1000:1000 --from=builder /app/public/ ./public/ 2>/dev/null || mkdir -p ./public/
+# Copy required files
+COPY --chown=1000:1000 --from=builder /app/node_modules ./node_modules
+COPY --chown=1000:1000 --from=builder /app/dist ./dist
+COPY --chown=1000:1000 --from=builder /app/package.json .
 
 # Environment
 ENV PORT=3000 NODE_ENV=production BUN_ENV=production \
