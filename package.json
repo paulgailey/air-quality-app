@@ -25,8 +25,9 @@
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.3",
+    "@types/dotenv": "^8.2.3",
     "@types/express": "^4.17.21",
-    "@types/node": "^22.15.15",
+    "@types/node": "^22.15.18",
     "@types/node-fetch": "^2.6.12",
     "cross-env": "^7.0.3",
     "rimraf": "^6.0.1",
