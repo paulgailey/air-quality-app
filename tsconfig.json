@@ -8,8 +8,14 @@
     "strict": true,
     "resolveJsonModule": true,
     "allowJs": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "allowSyntheticDefaultImports": true,
+    "noEmitOnError": false,
+    "baseUrl": ".",
+    "paths": {
+      "*": ["*"]
+    }
   },
-  "include": ["**/*.ts", "**/*.js"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*.ts", "types/**/*.ts", "services/**/*.ts", "*.ts"],
+  "exclude": ["node_modules", "dist", "api"]
 }
