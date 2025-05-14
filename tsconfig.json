@@ -7,7 +7,9 @@
     "skipLibCheck": true,
     "strict": true,
     "resolveJsonModule": true,
-    "allowJs": true
+    "allowJs": true,
+    "outDir": "dist"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["**/*.ts", "**/*.js"],
+  "exclude": ["node_modules", "dist"]
 }

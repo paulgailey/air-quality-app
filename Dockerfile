@@ -6,8 +6,8 @@ WORKDIR /app
 RUN apk add --no-cache curl git
 
 # Copy package files
-COPY package.json .
-COPY tsconfig*.json ./
+COPY package.json ./
+COPY tsconfig.json ./
 COPY bun.lockb* ./
 
 # Install dependencies (including dev dependencies for TypeScript compilation)
@@ -15,6 +15,9 @@ RUN bun install
 
 # Copy source code
 COPY . .
+
+# Debug: List files to verify source files are copied correctly
+RUN find . -type f -name "*.ts" -o -name "*.js" | sort
 
 # Build the TypeScript application
 RUN bun run build
