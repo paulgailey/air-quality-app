@@ -1,3 +1,4 @@
+// Version 2.1.2 - Proper base class extension
 import 'dotenv/config';
 import express, { Request, Response, NextFunction, Application } from 'express';
 import { fileURLToPath } from 'url';
@@ -14,7 +15,7 @@ const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
 const config = JSON.parse(readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
-const APP_VERSION = "1.3.8";
+const APP_VERSION = "2.1.2";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
 const AQI_TOKEN = process.env.AQI_TOKEN as string;
@@ -25,8 +26,7 @@ if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   process.exit(1);
 }
 
-// AQI Levels from waqi.info
-// https://aqicn.org/json-api/doc/#/aqicn-api-docs/aqi-levels
+// AQI Levels
 const AQI_LEVELS = [
   { max: 50, label: "Good", emoji: "😊", advice: "Perfect for outdoor activities!" },
   { max: 100, label: "Moderate", emoji: "😐", advice: "Acceptable air quality" },
@@ -44,21 +44,38 @@ interface AQIStationData {
   };
 }
 
+interface SessionData {
+  lastActive: number;
+  location?: {
+    lat: number;
+    lon: number;
+  };
+}
+
 declare module '@augmentos/sdk' {
   interface TpaSession {
-    location?: {
-      latitude: number;
-      longitude: number;
-    };
     audio?: {
       play(path: string): Promise<void>;
       speak?(text: string, options?: { language?: string }): Promise<void>;
     };
+    onLocation(
+      listener: (update: {
+        coords: {
+          latitude: number;
+          longitude: number;
+          accuracy: number;
+          altitude: number | null;
+          altitudeAccuracy: number | null;
+          heading: number | null;
+          speed: number | null;
+        };
+        timestamp: number;
+      }) => void
+    ): void;
   }
 }
 
 class AirQualityApp extends TpaServer {
-  private _activeSessions = new Map<string, { userId: string; started: Date }>();
   private requestCount = 0;
   private readonly VOICE_COMMANDS = [
     "air quality",
@@ -68,6 +85,7 @@ class AirQualityApp extends TpaServer {
     "is the air safe",
     "nearest air quality station"
   ];
+  private sessionDataMap = new Map<string, SessionData>(); // Renamed to avoid conflict
 
   constructor() {
     super({
@@ -82,12 +100,10 @@ class AirQualityApp extends TpaServer {
   private setupRoutes(): void {
     const app = this.getExpressApp() as Application;
 
-    // Properly typed favicon handler
-    app.get('/favicon.ico', (req: Request<{}, any, any, ParsedQs, Record<string, any>>, res: Response<any, Record<string, any>>) => {
+    app.get('/favicon.ico', (req: Request, res: Response) => {
       res.status(204).end();
     });
 
-    // Middleware with explicit types
     app.use((req: Request, res: Response, next: NextFunction) => {
       res.setHeader('ngrok-skip-browser-warning', 'true');
       next();
@@ -103,11 +119,11 @@ class AirQualityApp extends TpaServer {
 
     app.use(express.json());
 
-    // Routes with proper Request/Response types
     app.get('/', (req: Request, res: Response) => {
       res.json({
         status: "running",
         version: APP_VERSION,
+        sessions: this.sessionDataMap.size,
         endpoints: ['/health', '/tpa_config.json']
       });
     });
@@ -115,7 +131,7 @@ class AirQualityApp extends TpaServer {
     app.get('/health', (req: Request, res: Response) => {
       res.json({
         status: "healthy",
-        sessions: this._activeSessions.size
+        sessions: this.sessionDataMap.size
       });
     });
 
@@ -146,21 +162,80 @@ class AirQualityApp extends TpaServer {
   }
 
   private async handleNewSession(sessionId: string, userId: string): Promise<void> {
-    console.log(`Initializing new session: ${sessionId} for user ${userId}`);
+    console.log(`Initializing session ${sessionId} for ${userId}`);
+    this.sessionDataMap.set(sessionId, { lastActive: Date.now() });
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
-    this._activeSessions.set(sessionId, { userId, started: new Date() });
+    const sessionData: SessionData = { lastActive: Date.now() };
+    this.sessionDataMap.set(sessionId, sessionData);
+
+    session.onLocation((update) => {
+      sessionData.lastActive = Date.now();
+      sessionData.location = {
+        lat: update.coords.latitude,
+        lon: update.coords.longitude
+      };
+    });
 
     session.onTranscriptionForLanguage('en-US', (transcript) => {
+      sessionData.lastActive = Date.now();
       const text = transcript.text.toLowerCase();
-      console.log(`🎤 Heard: "${text}"`);
       if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
-        this.checkAirQuality(session).catch(console.error);
+        this.checkAirQuality(session, sessionData.location).catch(console.error);
       }
     });
 
-    await this.checkAirQuality(session);
+    await this.checkAirQuality(session, sessionData.location);
+  }
+
+  private async checkAirQuality(
+    session: TpaSession,
+    coords?: { lat: number; lon: number }
+  ): Promise<void> {
+    try {
+      const finalCoords = coords || await this.getApproximateCoords();
+      const station = await this.getNearestAQIStation(finalCoords.lat, finalCoords.lon);
+      const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
+      
+      await (session.layouts as any).showTextWall(
+        `📍 ${station.station.name}\n\n` +
+        `Air Quality: ${quality.label} ${quality.emoji}\n` +
+        `AQI: ${station.aqi}\n\n` +
+        `${quality.advice}`,
+        { view: ViewType.MAIN, durationMs: 10000 }
+      );
+
+      await this.playAudioForQuality(session, quality.label);
+    } catch (error) {
+      console.error("Air quality check failed:", error);
+      await (session.layouts as any).showTextWall("Air quality unavailable", { 
+        view: ViewType.MAIN,
+        durationMs: 3000 
+      });
+    }
+  }
+
+  private async playAudioForQuality(session: TpaSession, qualityLabel: string): Promise<void> {
+    if (!session.audio?.play) return;
+
+    const audioBasePath = path.join(__dirname, '../public/audio/blip');
+    const aqiLevel = qualityLabel.toLowerCase().split(' ')[0];
+    const audioFiles = [
+      path.join(audioBasePath, `${aqiLevel}.mp3`),
+      path.join(audioBasePath, 'default.mp3')
+    ];
+
+    for (const audioFile of audioFiles) {
+      if (existsSync(audioFile)) {
+        try {
+          await session.audio.play(audioFile);
+          break;
+        } catch (error) {
+          console.error('Audio playback failed:', error);
+        }
+      }
+    }
   }
 
   private async getNearestAQIStation(lat: number, lon: number): Promise<AQIStationData> {
@@ -185,56 +260,6 @@ class AirQualityApp extends TpaServer {
     }
   }
 
-  private async checkAirQuality(session: TpaSession): Promise<void> {
-    try {
-      const coords = session.location 
-        ? { lat: session.location.latitude, lon: session.location.longitude }
-        : await this.getApproximateCoords();
-      
-      const station = await this.getNearestAQIStation(coords.lat, coords.lon);
-      const quality = AQI_LEVELS.find(l => station.aqi <= l.max) || AQI_LEVELS[AQI_LEVELS.length - 1];
-      
-      await session.layouts.showTextWall(
-        `📍 ${station.station.name}\n\n` +
-        `Air Quality: ${quality.label} ${quality.emoji}\n` +
-        `AQI: ${station.aqi}\n\n` +
-        `${quality.advice}`,
-        { view: ViewType.MAIN, durationMs: 10000 }
-      );
-
-      // Robust audio handling
-      const audioBasePath = path.join(__dirname, '../public/audio/blip');
-      const aqiLevel = quality.label.toLowerCase().split(' ')[0];
-      const audioFiles = [
-        path.join(audioBasePath, `${aqiLevel}.mp3`),
-        path.join(audioBasePath, 'default.mp3')
-      ];
-
-      if (session.audio?.play) {
-        for (const audioFile of audioFiles) {
-          if (existsSync(audioFile)) {
-            try {
-              await session.audio.play(audioFile);
-              console.log('Played audio:', path.basename(audioFile));
-              break;
-            } catch (audioError) {
-              console.error('Audio playback failed:', audioError);
-            }
-          }
-        }
-      } else {
-        console.warn('Audio API not available in this session');
-      }
-
-    } catch (error) {
-      console.error("Check failed:", error);
-      await session.layouts.showTextWall("Air quality unavailable", { 
-        view: ViewType.MAIN,
-        durationMs: 3000 
-      });
-    }
-  }
-
   private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
     try {
       const ip = await axios.get('https://ipapi.co/json/', { timeout: 2000 });
@@ -252,4 +277,7 @@ class AirQualityApp extends TpaServer {
 new AirQualityApp().getExpressApp().listen(PORT, () => {
   console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
   console.log(`Configure ngrok with: ngrok http ${PORT}`);
+}).on('error', (err: Error) => {
+  console.error('Server error:', err);
+  process.exit(1);
 });
