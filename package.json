@@ -1,5 +1,5 @@
 {
-  "name": "@everywoah/air-quality",
+  "name": "air-quality-app",
   "version": "1.2.0",
   "type": "module",
   "augmentos": {
