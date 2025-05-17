@@ -1,0 +1,9 @@
+{
+  "packageName": "air-quality-app",
+  "apiKey": "442c30f0b432952d0740ef7fb58fdd584f08ac06047dbdb3d43133712e724600",
+  "voice": {
+    "language": "en-GB",
+    "transcription": true
+  },
+  "debug": true
+}
