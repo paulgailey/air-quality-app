@@ -1,4 +1,4 @@
-// v1.2.1
+// v1.3.4 - Fully type-correct implementation
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,11 +7,9 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
 
-// Setup for ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configuration
 const packageJson = JSON.parse(
   readFileSync(path.join(__dirname, '../package.json'), 'utf-8')
 );
@@ -21,13 +19,11 @@ const PACKAGE_NAME = process.env.PACKAGE_NAME || 'air-quality-app';
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY as string;
 const AQI_TOKEN = process.env.AQI_TOKEN as string;
 
-// Validate environment
 if (!AUGMENTOS_API_KEY || !AQI_TOKEN) {
   console.error('❌ Missing required environment variables');
   process.exit(1);
 }
 
-// AQI Levels
 const AQI_LEVELS = [
   { max: 50, label: "Good", emoji: "😊", advice: "Perfect for outdoor activities!" },
   { max: 100, label: "Moderate", emoji: "😐", advice: "Acceptable air quality" },
@@ -52,18 +48,16 @@ interface LocationData {
   timestamp?: number;
 }
 
+// import or define WebSocketError if needed
+interface WebSocketError {
+  // minimal props for type compatibility
+  message?: string;
+  stack?: string;
+  [key: string]: any;
+}
+
 class AirQualityApp extends TpaServer {
   private requestCount = 0;
-  private readonly VOICE_COMMANDS = [
-    "air quality",
-    "what's the air like",
-    "pollution",
-    "air pollution",
-    "how clean is the air",
-    "is the air safe",
-    "nearest air quality station"
-  ];
-
   private currentLocations = new Map<string, LocationData>();
 
   constructor() {
@@ -73,31 +67,64 @@ class AirQualityApp extends TpaServer {
       port: PORT,
       publicDir: path.join(__dirname, '../public')
     });
+
+    process.on('uncaughtException', (err) => {
+      console.error('❌ Uncaught Exception:', err);
+    });
+
+    process.on('SIGINT', () => {
+      console.log('\n🔌 Shutting down gracefully...');
+      process.exit(0);
+    });
   }
 
   public async start(): Promise<void> {
     await super.start();
-    console.log(`✅ Air Quality v${APP_VERSION} running on port ${PORT}`);
+    console.log(`\n✅ Air Quality v${APP_VERSION}`);
+    console.log(`🌐 Local: http://localhost:${PORT}`);
+    console.log(`📡 Ready for connections\n`);
   }
 
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`🔌 Session started: ${sessionId} for user ${userId}`);
 
+    // Fix here: widen error param to Error | WebSocketError
+    session.events.on('error', (err: Error | WebSocketError) => {
+      // Normalize err.message safely
+      const msg = err && typeof err === 'object' && 'message' in err && typeof err.message === 'string'
+        ? err.message
+        : String(err);
+      console.error(`❌ Session Error (${sessionId}):`, msg);
+    });
+
     session.events.on('locationUpdate', (location: LocationData) => {
       this.currentLocations.set(sessionId, location);
-      console.log(`📍 Location updated for session ${sessionId}:`, location);
+      console.log(`📍 GPS Location updated:`, location);
       this.checkAirQuality(session, location).catch(console.error);
     });
 
+    session.events.on('locationPermissionResponse', (granted: boolean) => {
+      if (!granted) {
+        console.warn('⚠️ Location permission denied');
+        session.layouts.showTextWall("Enable location for accurate results", {
+          view: ViewType.MAIN,
+          durationMs: 3000
+        });
+      }
+    });
+
     session.events.on('transcription', (transcript: { text: string; language: string }) => {
+      console.log(`🎤 Raw transcript:`, transcript);
       if (transcript.language === 'en-US') {
         const text = transcript.text.toLowerCase();
-        console.log(`🎤 Heard: "${text}"`);
-        if (this.VOICE_COMMANDS.some(cmd => text.includes(cmd.toLowerCase()))) {
-          const location = this.currentLocations.get(sessionId);
-          this.checkAirQuality(session, location).catch(console.error);
-        }
+        console.log(`🎤 Processed command: "${text}"`);
+        const location = this.currentLocations.get(sessionId);
+        this.checkAirQuality(session, location).catch(console.error);
       }
+    });
+
+    session.events.on('voiceStateChange', (state: { active: boolean }) => {
+      console.log(`🎤 Microphone ${state.active ? 'active' : 'inactive'}`);
     });
 
     const initialLocation = this.currentLocations.get(sessionId);
@@ -156,26 +183,27 @@ class AirQualityApp extends TpaServer {
     }
   }
 
-private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
-  try {
-    console.log('📱 User location not available. Attempting IP geolocation...');
-    const ip = await axios.get('https://ipapi.co/json/', { timeout: 3000 });
-    if (ip.data.latitude && ip.data.longitude) {
-      console.log(`📍 IP geolocation success: ${ip.data.latitude}, ${ip.data.longitude}`);
-      return { lat: ip.data.latitude, lon: ip.data.longitude };
+  private async getApproximateCoords(): Promise<{ lat: number, lon: number }> {
+    try {
+      console.log('📱 User location not available. Attempting IP geolocation...');
+      const ip = await axios.get('https://ipapi.co/json/', { timeout: 3000 });
+      if (ip.data.latitude && ip.data.longitude) {
+        console.log(`📍 IP geolocation success: ${ip.data.latitude}, ${ip.data.longitude}`);
+        return { lat: ip.data.latitude, lon: ip.data.longitude };
+      }
+    } catch (error) {
+      console.warn("⚠️ IP geolocation failed:", error);
     }
-  } catch (error) {
-    console.warn("⚠️ IP geolocation failed:", error);
+    const fallbackLat = parseFloat(process.env.FALLBACK_LAT || '51.5074');
+    const fallbackLon = parseFloat(process.env.FALLBACK_LON || '-0.1278');
+    console.log(`📍 Using fallback location: ${fallbackLat}, ${fallbackLon}`);
+    return { lat: fallbackLat, lon: fallbackLon };
   }
-  const fallbackLat = parseFloat(process.env.FALLBACK_LAT || '51.5074');
-  const fallbackLon = parseFloat(process.env.FALLBACK_LON || '-0.1278');
-  console.log(`📍 Using fallback location: ${fallbackLat}, ${fallbackLon}`);
-  return { lat: fallbackLat, lon: fallbackLon };
 }
 
-}
-
-// Startup
-const airQualityApp = new AirQualityApp();
-airQualityApp.start()
-  .catch(err => console.error('❌ Failed to start server:', err));
+console.log(`🚀 Launching Air Quality v${APP_VERSION}...`);
+new AirQualityApp().start()
+  .catch(err => {
+    console.error('❌ Fatal startup error:', err);
+    process.exit(1);
+  });

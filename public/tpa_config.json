@@ -1,0 +1,20 @@
+{
+  "packageName": "air-quality-app",
+  "voiceCommands": [
+    {"phrase": "air quality", "description": "Check current air quality"},
+    {"phrase": "what's the air like", "description": "Get air quality report"},
+    {"phrase": "pollution", "description": "Check pollution levels"},
+    {"phrase": "air pollution", "description": "Get air pollution data"},
+    {"phrase": "how clean is the air", "description": "Check air cleanliness"},
+    {"phrase": "is the air safe", "description": "Verify air safety"},
+    {"phrase": "nearest air quality station", "description": "Find nearby air quality stations"}
+  ],
+  "voice": {
+    "language": "en-US",
+    "continuous": true,
+    "transcription": true,
+    "autoStart": true
+  },
+  "permissions": ["location"],
+  "debug": true
+}
