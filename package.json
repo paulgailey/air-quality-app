@@ -1,0 +1,34 @@
+{
+  "name": "air-quality-app",
+  "version": "1.2.0",
+  "type": "module",
+  "augmentos": {
+    "versionDisplay": "Air Quality v1.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paulgailey/air-quality-app"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "tsc",
+    "start": "bun run dist/index.js",
+    "postinstall": "npm run build",
+    "clean-start": "kill-port 3000 && bun run src/index.ts"
+  },
+  "dependencies": {
+    "@augmentos/sdk": "1.1.4",
+    "axios": "^1.6.0",
+    "dotenv": "^16.5.0",
+    "jsonwebtoken": "9.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^18.15.0",
+    "typescript": "~4.9.5"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  }
+}
