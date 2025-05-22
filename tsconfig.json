@@ -12,8 +12,9 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "lib": ["ES2020"],
-    "types": ["node"]
+    "typeRoots": ["./node_modules/@types", "./src"],
+    "types": []
   },
-  "include": ["src/**/*"],
+  "include": ["src", "types"],
   "exclude": ["node_modules"]
 }
