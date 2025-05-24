@@ -1,0 +1,22 @@
+{
+  // TypeScript version control
+  "typescript.tsdk": "./node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  // Ensure Bun is used instead of npm
+  "eslint.packageManager": "bun",
+  "npm.packageManager": "bun",
+
+  // PowerShell integration
+  "powershell.scriptAnalysis.enable": true,
+  "files.associations": {
+    "*.ps1": "powershell"
+  },
+
+  // Lock Node version (if using Volta)
+  "volta.nodeVersion": "22.15.0",
+
+  // Auto-formatting
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true
+}
