@@ -3,98 +3,6 @@
     {
       "phrase": "air quality",
       "description": "Check air quality"
-    },
-    {
-      "phrase": "what's the air like here",
-      "description": "Check local air quality"
-    },
-    {
-      "phrase": "pollution",
-      "description": "Check pollution levels"
-    },
-    {
-      "phrase": "how clean is the air",
-      "description": "Check air cleanliness"
-    },
-    {
-      "phrase": "is the air safe",
-      "description": "Check air safety"
-    },
-    {
-      "phrase": "check air pollution",
-      "description": "Get pollution data"
-    },
-    {
-      "phrase": "air quality index",
-      "description": "Check current AQI"
-    },
-    {
-      "phrase": "what's the AQI",
-      "description": "Get air quality index"
-    },
-    {
-      "phrase": "how bad is the air",
-      "description": "Check air quality severity"
-    },
-    {
-      "phrase": "should I go outside today",
-      "description": "Get outdoor activity recommendation"
-    },
-    {
-      "phrase": "is the air polluted",
-      "description": "Check pollution status"
-    },
-    {
-      "phrase": "air pollution level",
-      "description": "Get pollution measurement"
-    },
-    {
-      "phrase": "air quality near me",
-      "description": "Check local air quality"
-    },
-    {
-      "phrase": "air quality here",
-      "description": "Check current location air quality"
-    },
-    {
-      "phrase": "pollution in this area",
-      "description": "Get localized pollution data"
-    },
-    {
-      "phrase": "pollution around here",
-      "description": "Check nearby pollution"
-    },
-    {
-      "phrase": "air around here",
-      "description": "Check local air conditions"
-    },
-    {
-      "phrase": "what's the air like",
-      "description": "Check air quality"
-    },
-    {
-      "phrase": "what is the air like",
-      "description": "Check air quality"
-    },
-    {
-      "phrase": "how's the air",
-      "description": "Check air quality"
-    },
-    {
-      "phrase": "how is the air",
-      "description": "Check air quality"
-    },
-    {
-      "phrase": "air pollution",
-      "description": "Check air quality"
-    },
-    {
-      "phrase": "nearest air quality station",
-      "description": "Check air quality"
-    },
-    {
-      "phrase": "check air quality",
-      "description": "Check air quality"
     }
   ],
   "permissions": ["location", "microphone"],
@@ -105,12 +13,12 @@
   },
   "audioSettings": {
     "microphone": {
-      "timeout": 15000,
+      "timeout": 12000,
       "keepAlive": true,
-      "endOfSpeechTimeout": 3000
+      "endOfSpeechTimeout": 2500
     }
   },
   "sessionSettings": {
-    "inactivityTimeout": 30000
+    "inactivityTimeout": 25000
   }
 }
