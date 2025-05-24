@@ -13,9 +13,9 @@
   },
   "audioSettings": {
     "microphone": {
-      "timeout": 12000,
-      "keepAlive": true,
-      "endOfSpeechTimeout": 2500
+    "timeout": 15000,
+    "keepAlive": true,
+    "endOfSpeechTimeout": 3500
     }
   },
   "sessionSettings": {
