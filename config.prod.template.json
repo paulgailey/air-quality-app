@@ -1,0 +1,11 @@
+{
+  "environment": "production",
+  "api": {
+    "baseUrl": "REPLACE_WITH_PRODUCTION_URL",
+    "timeout": 5000,
+    "useNgrok": false
+  },
+  "debug": {
+    "verboseLogs": false
+  }
+}

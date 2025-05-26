@@ -1,0 +1,11 @@
+{
+  "environment": "development",
+  "api": {
+    "baseUrl": "http://localhost:3000",
+    "timeout": 8000,
+    "useNgrok": true
+  },
+  "debug": {
+    "verboseLogs": true
+  }
+}
