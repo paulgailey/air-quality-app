@@ -5,9 +5,13 @@
   "scripts": {
     "dev": "bun --hot run src/index.ts",
     "start": "pwsh -File ./startup.ps1",
+    "start:prod": "node dist/index.js",
     "start:node": "ts-node src/index.ts",
     "build": "tsc",
     "serve": "node dist/index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0 <21"
   },
   "dependencies": {
     "@augmentos/sdk": "1.0.7",

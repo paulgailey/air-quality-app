@@ -133,4 +133,6 @@ dist
 .pnp.*
 
 config.prod.json
-
+*.pem
+node_modules/
+dist/
