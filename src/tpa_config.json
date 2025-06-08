@@ -1,0 +1,24 @@
+{
+  "voiceCommands": [
+    {
+      "phrase": "air quality",
+      "description": "Check air quality"
+    }
+  ],
+  "permissions": ["location", "microphone"],
+  "transcriptionLanguages": ["en-US"],
+  "defaultLocation": {
+    "lat": 51.5074,
+    "lon": -0.1278
+  },
+  "audioSettings": {
+    "microphone": {
+      "timeout": 15000,
+      "keepAlive": true,
+      "endOfSpeechTimeout": 3500
+    }
+  },
+  "sessionSettings": {
+    "inactivityTimeout": 25000
+  }
+}

@@ -1,6 +1,6 @@
 # ===== CONFIGURATION =====
-$EC2_IP = "35.159.86.53"
-$KEY_PATH = "C:\Users\paul\Documents\Code\AWS\prod-app-key.pem"
+$EC2_IP = "13.38.48.180"
+$KEY_PATH = "C:\Users\paul\Documents\Code\AWS\prod-app2-key.pem"
 $LOCAL_ENV_PATH = "C:\Users\paul\Documents\Code\AugmentOS\air-quality-app\.env"
 $REMOTE_APP_DIR = "/home/ubuntu/air-quality-app"
 
