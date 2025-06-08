@@ -1,6 +1,6 @@
 # air-quality-app 8/6/2025
 
-Production version listens for "air quality" and returns WAQI.info air quality
+Listens for "air quality" and returns waqi.info air quality
 
 ## Requirements
 
