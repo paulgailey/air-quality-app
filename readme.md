@@ -1,6 +1,6 @@
 # air-quality-app 8/6/2025
 
-Say "air quality" and returns waqi.info air quality
+Say "air quality" to return waqi.info air quality
 
 ## Requirements
 
