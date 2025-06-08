@@ -1,0 +1,20 @@
+name: Deploy to Paris EC2
+on:
+  push:
+    branches: [production]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH & Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: your-ec2-public-ip
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ~/air-quality-app
+            git pull origin production
+            npm install
+            pm2 restart all
